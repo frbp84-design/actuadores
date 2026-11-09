@@ -1,0 +1,1263 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>OVA Actuadores con ESP32</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: cabecera tipo ficha técnica + pestañas por unidad; cada rol del sistema tiene su color (sensor, controlador, actuador, potencia) y ese código se repite en todos los diagramas */
+/* Paleta institucional Universidad de Córdoba (verde). Roles: sensor = verde, controlador = verde más oscuro, actuador = dorado, potencia = tierra */
+:root{
+  --verde:#6C8A2E; --verde-oscuro:#4F6322; --verde-mas-oscuro:#3A4A19; --verde-claro:#8FA952;
+  --oliva-fill:#EDF2E4; --crema:#F7F8F3; --tinta:#2E3620; --tinta-media:#5B6350; --dorado:#B4863A;
+  --rojo:#A8381F; --rojo-fill:#F7E6E1; --verde-ok-fill:#E3EBD4;
+  --bg:var(--crema); --surface:#ffffff; --surface-2:var(--oliva-fill); --ink:var(--tinta); --muted:var(--tinta-media); --line:#D6DDC8;
+  --sensor:var(--verde); --ctrl:var(--verde-mas-oscuro); --act:var(--dorado); --pow:#8A4F2B; --ok:var(--verde-oscuro); --warn:var(--dorado);
+  --sensor-bg:var(--oliva-fill); --ctrl-bg:#F1F2EC; --act-bg:#F6EDDC; --pow-bg:#F2E6DC; --ok-bg:var(--verde-ok-fill);
+  --err:var(--rojo); --err-bg:var(--rojo-fill);
+  --wire-sig:#2f6fd6; --wire-5v:#d97706; --wire-12v:#c0263a; --wire-3v3:#a23cb8; --wire-gnd:#38424d;
+  --f-display:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;
+  --f-body:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;
+  --f-mono:Consolas,'Courier New',monospace;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.6}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
+.wrap{max-width:1080px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+h1,h2,h3,h4{font-family:var(--f-display);color:var(--tinta);line-height:1.15;text-wrap:balance;margin:0}
+h1{font-size:clamp(2rem,5vw,3.1rem);font-weight:800;letter-spacing:-.01em}
+h2{font-size:clamp(1.55rem,3.4vw,2.1rem);font-weight:750}
+h3{font-size:1.25rem;font-weight:700}
+h4{font-size:1.05rem;font-weight:700}
+p{margin:0}
+.prose{max-width:68ch;display:grid;gap:.9rem;color:var(--tinta-media)}
+.prose strong{color:var(--tinta)}
+.mono{font-family:var(--f-mono);font-size:.88em}
+code{font-family:var(--f-mono);font-size:.86em;background:var(--surface-2);padding:.1em .35em;border-radius:4px}
+.eyebrow{font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.1em;color:var(--verde-oscuro)}
+a{color:var(--verde-oscuro)}
+:focus-visible{outline:3px solid var(--dorado);outline-offset:2px}
+
+/* cabecera */
+header.top{background:linear-gradient(135deg,var(--verde-mas-oscuro) 0%,var(--verde) 60%,var(--verde-claro) 100%);color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.5)}
+header.top h1{color:#fff}
+.brand{font-size:.95rem;font-weight:600;color:#fff;letter-spacing:.01em}
+header.top .wrap{padding-block:28px 22px;display:grid;gap:14px}
+.spec{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:.8rem;color:rgba(255,255,255,.88)}
+.spec b{color:#fff;font-weight:600}
+.lede{max-width:64ch;color:#fff;font-size:1.05rem}
+.roles{display:flex;flex-wrap:wrap;gap:8px}
+.role{font-size:.78rem;font-weight:600;padding:3px 10px;border-radius:99px;border:1px solid currentColor;text-shadow:none}
+.r-sensor{color:var(--sensor);background:var(--sensor-bg)}
+.r-ctrl{color:var(--ctrl);background:var(--ctrl-bg)}
+.r-act{color:var(--act);background:var(--act-bg)}
+.r-pow{color:var(--pow);background:var(--pow-bg)}
+
+/* navegación */
+nav.tabs{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line)}
+nav.tabs .wrap{display:flex;gap:8px;overflow-x:auto;scrollbar-width:thin;padding-block:10px}
+nav.tabs a{flex:none;display:flex;gap:8px;align-items:baseline;padding:7px 14px;text-decoration:none;background:#fff;color:var(--verde-oscuro);border:1px solid var(--verde);border-radius:8px;font-weight:600;font-size:.9rem;white-space:nowrap}
+nav.tabs a span{font-size:.75rem;opacity:.75}
+nav.tabs a:hover{background:var(--oliva-fill)}
+nav.tabs a[aria-current="page"]{background:var(--verde);color:#fff;border-color:var(--verde)}
+
+main .wrap{padding-block:34px 60px}
+section.unit{display:grid;gap:28px}
+.unit-head{display:grid;gap:8px;border-bottom:1px solid var(--line);padding-bottom:18px}
+.block{display:grid;gap:14px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:18px}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr));gap:16px}
+.grid2>*,.grid3>*{min-width:0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px;display:grid;gap:8px;align-content:start}
+.def{border-left:4px solid var(--verde);background:var(--surface);padding:18px 20px;border-radius:0 10px 10px 0;max-width:72ch}
+.def p{font-size:1.08rem}
+.def .src{font-size:.85rem;color:var(--muted);margin-top:6px}
+.note{background:var(--oliva-fill);color:var(--tinta-media);border-radius:8px;padding:14px 16px;font-size:.95rem;max-width:72ch}
+.note.warn{background:var(--pow-bg);color:var(--ink)}
+.note.warn strong{color:var(--pow)}
+ul.clean{margin:0;padding-left:1.1rem;display:grid;gap:6px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:.9rem}
+.kv dt{color:var(--muted);font-family:var(--f-mono);font-size:.78rem;padding-top:2px}
+.kv dd{margin:0}
+
+/* tablas */
+.tablebox{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:.92rem}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:var(--f-mono);font-size:.74rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:500;background:var(--surface-2)}
+tr:last-child td{border-bottom:0}
+td.num{font-variant-numeric:tabular-nums;font-family:var(--f-mono);font-size:.85rem}
+
+/* diagramas */
+.fig{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;display:grid;gap:10px}
+.fig .scroll{overflow-x:auto}
+.fig svg{display:block;width:100%;height:auto}
+.fig figcaption{font-size:.88rem;color:var(--muted)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:.8rem;font-family:var(--f-mono);color:var(--muted)}
+.legend i{display:inline-block;width:18px;height:4px;border-radius:2px;vertical-align:middle;margin-right:6px}
+svg text{font-family:var(--f-body)}
+.t-ink{fill:var(--ink)} .t-muted{fill:var(--muted)} .t-mono{font-family:var(--f-mono)!important}
+.b-sensor{fill:var(--sensor-bg);stroke:var(--sensor)} .b-ctrl{fill:var(--ctrl-bg);stroke:var(--ctrl)}
+.b-act{fill:var(--act-bg);stroke:var(--act)} .b-pow{fill:var(--pow-bg);stroke:var(--pow)}
+.b-neutral{fill:var(--surface-2);stroke:var(--muted)} .b-ok{fill:var(--ok-bg);stroke:var(--ok)}
+.c-sensor{fill:var(--sensor)} .c-ctrl{fill:var(--ctrl)} .c-act{fill:var(--act)} .c-pow{fill:var(--pow)}
+.ln{fill:none;stroke:var(--muted);stroke-width:2}
+.ln-ink{fill:none;stroke:var(--ink);stroke-width:1.8}
+.w-sig{fill:none;stroke:var(--wire-sig);stroke-width:2.4}
+.w-5v{fill:none;stroke:var(--wire-5v);stroke-width:2.4}
+.w-12v{fill:none;stroke:var(--wire-12v);stroke-width:2.4}
+.w-3v3{fill:none;stroke:var(--wire-3v3);stroke-width:2.4}
+.w-gnd{fill:none;stroke:var(--wire-gnd);stroke-width:2.4}
+.arrowhead{fill:var(--muted)}
+.blk{stroke-width:2}
+.active-glow{filter:drop-shadow(0 0 6px var(--act))}
+
+/* controles */
+button,.btn{font:inherit;font-size:.9rem;font-weight:500;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:8px 14px;border-radius:8px;cursor:pointer}
+button:hover{border-color:var(--muted)}
+button.primary{background:var(--verde);color:#fff;border-color:var(--verde)}
+button.primary:hover{background:var(--verde-oscuro)}
+button[aria-pressed="true"]{background:var(--act-bg);border-color:var(--act);color:var(--act)}
+input[type=range]{width:100%;accent-color:var(--verde)}
+label{font-size:.9rem}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button{padding:5px 12px;border-radius:99px;font-size:.84rem}
+
+/* catálogo */
+.act-card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:grid;gap:10px;align-content:start}
+.act-card header{display:flex;justify-content:space-between;gap:10px;align-items:start}
+.tag{font-family:var(--f-mono);font-size:.7rem;padding:2px 8px;border-radius:99px;background:var(--act-bg);color:var(--act);white-space:nowrap}
+.conv{font-family:var(--f-mono);font-size:.78rem;color:var(--muted)}
+.pair{font-size:.85rem;border-top:1px dashed var(--line);padding-top:8px;color:var(--muted)}
+.pair b{color:var(--sensor);font-weight:600}
+
+/* simulador */
+.sim{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:18px}
+@media (max-width:820px){.sim{grid-template-columns:1fr}}
+.readout{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.meter{background:var(--surface-2);border-radius:10px;padding:12px 14px}
+.meter .v{font-family:var(--f-mono);font-size:1.9rem;font-variant-numeric:tabular-nums;line-height:1.1}
+.meter .l{font-size:.78rem;color:var(--muted)}
+.acts{display:grid;gap:8px}
+.actrow{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+.dot{width:12px;height:12px;border-radius:50%;background:var(--line)}
+.actrow.on{border-color:var(--act);background:var(--act-bg)}
+.actrow.on .dot{background:var(--act);box-shadow:0 0 0 4px color-mix(in srgb,var(--act) 25%,transparent)}
+.actrow.alarm.on{border-color:var(--pow);background:var(--pow-bg)}
+.actrow.alarm.on .dot{background:var(--pow)}
+.actrow .st{font-family:var(--f-mono);font-size:.8rem;font-variant-numeric:tabular-nums}
+.actrow small{display:block;color:var(--muted);font-size:.76rem;line-height:1.3}
+canvas{width:100%;display:block;border-radius:8px;background:var(--surface-2)}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+
+/* pwm */
+.fan{width:96px;height:96px}
+.fan g.blades{transform-origin:50px 50px;animation:spin linear infinite;animation-duration:var(--spd,0s)}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.fan g.blades{animation:none}}
+
+/* quiz */
+.q{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 18px;display:grid;gap:10px}
+.q ol{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.q li button{width:100%;text-align:left;font-weight:400;padding:9px 12px}
+.q li button.right{border-color:var(--ok);background:var(--ok-bg)}
+.q li button.wrong{border-color:var(--err);background:var(--err-bg)}
+.q .fb{font-size:.9rem;color:var(--muted)}
+.score{font-family:var(--f-mono);font-size:.9rem}
+
+pre.code{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:16px;overflow-x:auto;font-family:var(--f-mono);font-size:.8rem;line-height:1.55;margin:0;max-height:560px}
+pre.code .c{color:var(--muted)} pre.code .k{color:var(--ctrl)} pre.code .n{color:var(--act)}
+details{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 16px}
+details summary{cursor:pointer;font-weight:600}
+details[open] summary{margin-bottom:12px}
+
+footer.brandfoot{border-top:3px solid var(--verde);background:#fff;color:var(--verde-oscuro);font-weight:600;font-size:.88rem}
+footer.brandfoot .wrap{padding-block:18px}
+.pager{display:flex;justify-content:space-between;gap:12px;border-top:1px solid var(--line);padding-top:20px;margin-top:10px;flex-wrap:wrap}
+.pager a{text-decoration:none;display:grid;gap:2px;padding:10px 14px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);min-width:0}
+.pager a small{color:var(--muted);font-family:var(--f-mono);font-size:.72rem}
+.pager a.next{text-align:right;margin-left:auto}
+.steps{counter-reset:s;display:grid;gap:10px;margin:0;padding:0;list-style:none}
+.steps li{counter-increment:s;display:grid;grid-template-columns:32px 1fr;gap:10px}
+.steps li::before{content:counter(s);font-family:var(--f-mono);font-size:.85rem;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:var(--ctrl-bg);color:var(--ctrl)}
+.hb{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;align-items:center}
+@media (max-width:720px){.hb{grid-template-columns:1fr}}
+</style>
+
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="spec"><span>Curso <b>Electrónica II</b></span><span>Ingeniería de Sistemas</span><span>Unidad <b>Actuadores</b></span><span>Plataforma <b>ESP32 · Arduino IDE</b></span><span>Texto guía <b>Floyd</b></span></div>
+    <h1>Actuadores: la parte del sistema que actúa sobre el mundo</h1>
+    <p class="brand">Universidad de Córdoba · Ingeniería de Sistemas · Objeto Virtual de Aprendizaje (OVA)</p>
+    <p class="lede">Ya sabemos medir con sensores. En esta unidad aprendemos a convertir una decisión del ESP32 en movimiento, calor, luz, sonido o flujo de agua, y a entender por qué un actuador solo tiene sentido dentro de un sistema completo.</p>
+    <div class="roles" aria-label="Código de colores usado en todo el OVA">
+      <span class="role r-sensor">Sensor · percibe</span><span class="role r-ctrl">Controlador · decide</span><span class="role r-act">Actuador · actúa</span><span class="role r-pow">Potencia · energiza</span>
+    </div>
+  </div>
+</header>
+
+<nav class="tabs" aria-label="Unidades del OVA">
+  <div class="wrap" id="tabs"></div>
+</nav>
+
+<main><div class="wrap" id="views">
+
+<!-- ===================== 1. INICIO ===================== -->
+<section class="unit" id="inicio" data-label="Inicio">
+  <div class="unit-head">
+    <span class="eyebrow">Presentación</span>
+    <h2>Del dato a la acción</h2>
+  </div>
+  <div class="grid2">
+    <div class="prose">
+      <p>En las unidades anteriores el ESP32 aprendió a <strong>percibir</strong>: el HC-SR04 le dice a qué distancia está un objeto, el FC-51 si hay algo al frente y el DHT cuál es la temperatura y la humedad. Pero un sistema que solo mide se queda mirando. El valor aparece cuando el sistema <strong>responde</strong>: enciende un ventilador cuando hace calor, frena un carro antes de chocar o riega una planta cuando la tierra está seca.</p>
+      <p>Esa respuesta la producen los <strong>actuadores</strong>. Como ingenieros de sistemas no nos interesa tanto el detalle físico interno del motor, sino entender qué papel cumple cada elemento, qué información y qué energía entra y sale de cada bloque, y cómo se cierra el ciclo entre percibir, decidir y actuar.</p>
+    </div>
+    <div class="card">
+      <span class="eyebrow">Objetivos de aprendizaje</span>
+      <ul class="clean">
+        <li>Definir qué es un actuador y diferenciarlo de un sensor y de un controlador.</li>
+        <li>Clasificar los actuadores según el tipo de energía y el efecto que producen.</li>
+        <li>Explicar por qué el ESP32 necesita una etapa de potencia (relé, transistor, MOSFET o puente H) para manejar un actuador.</li>
+        <li>Controlar actuadores con señales ON/OFF, PWM y de posición (servo).</li>
+        <li>Leer e interpretar el diagrama de bloques, el diagrama de flujo y el diagrama de conexiones de un sistema completo.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="block">
+    <h3>Ruta del OVA</h3>
+    <div class="tablebox"><table>
+      <thead><tr><th>Unidad</th><th>Qué vas a encontrar</th><th>Actividad</th></tr></thead>
+      <tbody>
+        <tr><td>¿Qué es un actuador?</td><td>Definición, el lazo percibir–decidir–actuar, por qué son importantes</td><td>Lectura y comparación</td></tr>
+        <tr><td>Tipos de actuadores</td><td>Catálogo con 11 actuadores, cómo se controlan y con qué sensor se complementan</td><td>Filtrar por efecto</td></tr>
+        <tr><td>Etapa de potencia</td><td>Relé, transistor, MOSFET, puente H, diodo de protección y PWM</td><td>Explorador PWM</td></tr>
+        <tr><td>Sensor + actuador</td><td>Lazo abierto y cerrado, histéresis, parejas sensor–actuador</td><td>Tabla de parejas</td></tr>
+        <tr><td>Proyecto: incubadora</td><td>Diagrama de bloques, de flujo, de conexiones y código del ESP32</td><td>Simulador de la incubadora</td></tr>
+        <tr><td>Reto: carro evasor</td><td>Puente H L298N y lógica de evasión con HC-SR04 y FC-51</td><td>Probador de puente H</td></tr>
+        <tr><td>Evaluación</td><td>Preguntas con retroalimentación inmediata</td><td>Autoevaluación</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+  <div class="note"><strong>Saberes previos:</strong> lectura de sensores con el ESP32 (HC-SR04, FC-51, DHT11), salidas digitales con <code>digitalWrite</code>, comunicación Bluetooth con App Inventor y el transistor como interruptor visto en Floyd.</div>
+</section>
+
+<!-- ===================== 2. ¿QUÉ ES? ===================== -->
+<section class="unit" id="actuador" data-label="¿Qué es un actuador?" hidden>
+  <div class="unit-head">
+    <span class="eyebrow">Conceptos</span>
+    <h2>¿Qué es un actuador?</h2>
+  </div>
+  <div class="def">
+    <p><strong>Un actuador es un dispositivo que recibe una señal de mando del controlador y convierte una fuente de energía (eléctrica, neumática o hidráulica) en una acción física sobre el entorno:</strong> movimiento, fuerza, calor, luz, sonido o flujo de un fluido.</p>
+    <p class="src">Dicho en lenguaje de sistemas: el actuador es el elemento de salida que transforma información en energía útil y modifica el estado de la planta (el proceso que queremos controlar).</p>
+  </div>
+  <div class="block">
+    <h3>Dos entradas, una salida</h3>
+    <p class="prose">Todo actuador tiene <strong>dos entradas distintas</strong>, y entender esto evita la mayoría de errores de montaje: una <strong>señal de mando</strong> de baja potencia (los 3.3 V y pocos miliamperios del GPIO del ESP32) y una <strong>fuente de energía</strong> de potencia (5 V, 12 V o 110 V con cientos de miliamperios o varios amperios). La señal dice <em>qué hacer</em>; la fuente pone <em>la energía para hacerlo</em>.</p>
+    <figure class="fig">
+      <div class="scroll"><svg viewBox="0 0 860 220" role="img" aria-label="Actuador con entrada de señal de mando, entrada de energía y salida de acción física">
+        <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker></defs>
+        <rect x="20" y="70" width="170" height="70" rx="10" class="b-ctrl blk"/>
+        <text x="105" y="100" text-anchor="middle" class="t-ink" font-weight="600" font-size="16">ESP32</text>
+        <text x="105" y="122" text-anchor="middle" class="t-muted" font-size="13">GPIO: 3.3 V, ≤ 20 mA</text>
+        <rect x="330" y="60" width="200" height="90" rx="10" class="b-act blk"/>
+        <text x="430" y="100" text-anchor="middle" class="t-ink" font-weight="700" font-size="17">Actuador</text>
+        <text x="430" y="124" text-anchor="middle" class="t-muted" font-size="13">(con su driver)</text>
+        <rect x="330" y="0" width="200" height="34" rx="8" class="b-pow blk"/>
+        <text x="430" y="22" text-anchor="middle" class="t-ink" font-size="13">Fuente: 5 V · 12 V · 110 V</text>
+        <path d="M430 34 V58" class="ln" marker-end="url(#ah)" style="stroke:var(--pow)"/>
+        <path d="M190 105 H326" class="ln" marker-end="url(#ah)" style="stroke:var(--ctrl)"/>
+        <text x="258" y="95" text-anchor="middle" class="t-muted" font-size="13">señal de mando</text>
+        <text x="258" y="126" text-anchor="middle" class="t-muted t-mono" font-size="11">ON/OFF · PWM · pulso</text>
+        <path d="M530 105 H666" class="ln" marker-end="url(#ah)" style="stroke:var(--act)"/>
+        <text x="598" y="95" text-anchor="middle" class="t-muted" font-size="13">acción física</text>
+        <rect x="670" y="70" width="170" height="70" rx="10" class="b-neutral blk"/>
+        <text x="755" y="100" text-anchor="middle" class="t-ink" font-weight="600" font-size="15">Entorno / planta</text>
+        <text x="755" y="122" text-anchor="middle" class="t-muted" font-size="12">temperatura, posición…</text>
+        <text x="430" y="200" text-anchor="middle" class="t-muted" font-size="13">Información (baja potencia) + Energía (alta potencia) → Efecto físico</text>
+      </svg></div>
+      <figcaption>Figura 1. El actuador como bloque: la flecha de mando lleva información, la de la fuente lleva energía.</figcaption>
+    </figure>
+  </div>
+
+  <div class="block">
+    <h3>Sensor, controlador y actuador: tres papeles distintos</h3>
+    <div class="grid3">
+      <div class="card" style="border-top:4px solid var(--sensor)">
+        <span class="eyebrow" style="color:var(--sensor)">Sensor · entrada</span>
+        <h4>Percibe</h4>
+        <p>Convierte una magnitud física (distancia, temperatura, luz) en una señal eléctrica que el controlador puede leer.</p>
+        <dl class="kv"><dt>Flujo</dt><dd>Mundo físico → información</dd><dt>Ejemplos</dt><dd>HC-SR04, FC-51, DHT22, LDR</dd></dl>
+      </div>
+      <div class="card" style="border-top:4px solid var(--ctrl)">
+        <span class="eyebrow" style="color:var(--ctrl)">Controlador · proceso</span>
+        <h4>Decide</h4>
+        <p>Compara lo medido con lo deseado (la consigna o <em>setpoint</em>) y, según su programa, calcula qué orden enviar.</p>
+        <dl class="kv"><dt>Flujo</dt><dd>Información → información</dd><dt>Ejemplos</dt><dd>ESP32, Arduino, PLC</dd></dl>
+      </div>
+      <div class="card" style="border-top:4px solid var(--act)">
+        <span class="eyebrow" style="color:var(--act)">Actuador · salida</span>
+        <h4>Actúa</h4>
+        <p>Recibe la orden y usa energía de una fuente para cambiar el entorno: mover, calentar, enfriar, iluminar, bombear.</p>
+        <dl class="kv"><dt>Flujo</dt><dd>Información + energía → mundo físico</dd><dt>Ejemplos</dt><dd>Motor, servo, relé, bomba, ventilador</dd></dl>
+      </div>
+    </div>
+    <p class="prose">Un sensor y un actuador son, en cierto sentido, transductores opuestos. El sensor lleva el mundo hacia la información; el actuador lleva la información hacia el mundo. Algunos dispositivos funcionan en ambos sentidos: un motor DC girado a mano genera voltaje (se comporta como sensor de velocidad) y un buzzer piezoeléctrico puede detectar golpes.</p>
+  </div>
+
+  <div class="block">
+    <h3>¿Por qué son tan importantes?</h3>
+    <div class="grid2">
+      <div class="prose">
+        <p><strong>Son el propósito del sistema.</strong> Nadie construye una incubadora para saber la temperatura; la construye para mantenerla. El actuador es lo que convierte el conocimiento en resultado.</p>
+        <p><strong>Definen los requisitos de potencia.</strong> El actuador es casi siempre el elemento que más energía consume. Su voltaje y corriente deciden qué fuente, qué cables y qué etapa de potencia necesita el proyecto.</p>
+        <p><strong>Cierran el ciclo de control.</strong> Cuando el actuador modifica el entorno, el sensor detecta el cambio y el controlador ajusta la orden. Sin actuador no hay realimentación.</p>
+      </div>
+      <div class="prose">
+        <p><strong>Determinan la seguridad.</strong> Un sensor que falla da un dato malo; un actuador que falla puede quemar, inundar o golpear. Por eso se diseñan estados seguros: si el sensor no responde, el calefactor se apaga.</p>
+        <p><strong>Limitan el desempeño.</strong> Un sistema solo responde tan rápido como su actuador más lento. Un calefactor tarda minutos; un LED, microsegundos. El programa debe respetar esos tiempos.</p>
+        <p><strong>Están en todas partes.</strong> Riego automático, domótica, robótica, vehículos, impresoras 3D, dispositivos médicos e Internet de las Cosas dependen de actuadores controlados por software.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== 3. TIPOS ===================== -->
+<section class="unit" id="tipos" data-label="Tipos" hidden>
+  <div class="unit-head">
+    <span class="eyebrow">Clasificación</span>
+    <h2>Tipos de actuadores</h2>
+  </div>
+  <div class="grid2">
+    <div class="card">
+      <h4>Según la energía que usan</h4>
+      <dl class="kv">
+        <dt>Eléctricos</dt><dd>Usan corriente eléctrica directamente. Son los que usaremos con el ESP32: motores, relés, solenoides, resistencias calefactoras, LED.</dd>
+        <dt>Neumáticos</dt><dd>Usan aire comprimido (cilindros, ventosas). Rápidos y limpios; el ESP32 los maneja a través de una electroválvula.</dd>
+        <dt>Hidráulicos</dt><dd>Usan aceite a presión. Dan fuerzas enormes (prensas, maquinaria pesada). También se gobiernan con electroválvulas.</dd>
+      </dl>
+    </div>
+    <div class="card">
+      <h4>Según el efecto que producen</h4>
+      <dl class="kv">
+        <dt>Movimiento</dt><dd>Giro continuo, posición angular o desplazamiento lineal.</dd>
+        <dt>Térmicos</dt><dd>Producen o retiran calor.</dd>
+        <dt>Fluidos</dt><dd>Mueven o detienen agua y aire.</dd>
+        <dt>Luz y sonido</dt><dd>Señalización, iluminación, alarmas.</dd>
+        <dt>Conmutación</dt><dd>Abren o cierran otro circuito de potencia.</dd>
+      </dl>
+    </div>
+  </div>
+  <div class="block">
+    <div class="row" style="justify-content:space-between">
+      <h3>Catálogo de actuadores para proyectos con ESP32</h3>
+      <div class="chips" id="filters" role="group" aria-label="Filtrar por efecto"></div>
+    </div>
+    <div class="grid3" id="catalog"></div>
+  </div>
+  <div class="note">En la fila verde de cada tarjeta está el <strong>sensor que lo complementa</strong>: el que mide el efecto que el actuador produce. Esa pareja es la base de un sistema de control.</div>
+</section>
+
+<!-- ===================== 4. POTENCIA ===================== -->
+<section class="unit" id="potencia" data-label="Etapa de potencia" hidden>
+  <div class="unit-head">
+    <span class="eyebrow">Interfaz controlador–actuador</span>
+    <h2>La etapa de potencia: el puente entre el ESP32 y el actuador</h2>
+  </div>
+  <div class="grid2">
+    <div class="prose">
+      <p>Un pin del ESP32 entrega <strong>3.3 V</strong> y se recomienda no pasar de unos <strong>20 mA</strong> por pin. Un ventilador de 12 V consume unos 150 mA, un motor TT de 200 a 800 mA y una resistencia calefactora puede pasar de 3 A. Si conectamos uno de estos actuadores directo al GPIO, el pin se daña o el ESP32 se reinicia.</p>
+      <p>Por eso entre el controlador y el actuador va una <strong>etapa de potencia</strong> (también llamada <em>driver</em> o interfaz de potencia): un circuito que recibe la señal débil del ESP32 y conmuta la corriente fuerte que viene de la fuente. Es exactamente la aplicación del transistor como interruptor que estudiamos en Floyd.</p>
+    </div>
+    <div class="note warn"><strong>Reglas que no se negocian</strong>
+      <ul class="clean" style="margin-top:8px">
+        <li>Nunca alimentar un motor, bomba o ventilador desde un GPIO.</li>
+        <li>Fuente de potencia separada para los actuadores y <strong>GND común</strong> con el ESP32.</li>
+        <li>Diodo de protección (flyback) en toda carga inductiva: motores, relés, solenoides, bombas.</li>
+        <li>Con 110 V AC solo módulos de relé con borneras aisladas y siempre con supervisión del docente.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="block">
+    <h3>Drivers más usados</h3>
+    <div class="tablebox"><table>
+      <thead><tr><th>Driver</th><th>Cómo funciona</th><th>Control desde el ESP32</th><th>Úsalo para</th><th>En Floyd</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Módulo de relé</strong></td><td>Un electroimán cierra un contacto mecánico aislado del circuito de control.</td><td>ON/OFF. Muchos módulos se activan con LOW.</td><td>Calefactores, bombillos, bombas, cargas AC o DC. No sirve para PWM.</td><td>Transistor como interruptor que maneja la bobina</td></tr>
+        <tr><td><strong>Transistor BJT</strong> (2N2222, TIP120)</td><td>Una corriente pequeña de base controla una corriente mayor de colector.</td><td>ON/OFF y PWM. Resistencia de base de 1 kΩ.</td><td>LED de potencia, buzzer, motores pequeños, bobinas de relé.</td><td>BJT en corte y saturación</td></tr>
+        <tr><td><strong>MOSFET de nivel lógico</strong> (IRLZ44N, AO3400)</td><td>El voltaje de compuerta controla la corriente drenador–fuente casi sin consumir corriente.</td><td>ON/OFF y PWM rápido. 220 Ω en la compuerta y 10 kΩ a GND.</td><td>Ventiladores, tiras LED, bombas DC, calefactores DC.</td><td>MOSFET de enriquecimiento</td></tr>
+        <tr><td><strong>Puente H</strong> (L298N, TB6612FNG)</td><td>Cuatro interruptores que invierten la polaridad del motor.</td><td>IN1/IN2 dan el sentido, EN recibe PWM para la velocidad.</td><td>Motores DC que deben girar en ambos sentidos (carros, sumobot).</td><td>Transistores en configuración de puente</td></tr>
+        <tr><td><strong>Driver paso a paso</strong> (A4988, ULN2003)</td><td>Energiza las bobinas del motor en secuencia.</td><td>Pulsos STEP y nivel DIR.</td><td>Posición precisa: impresoras 3D, dosificadores.</td><td>Arreglos Darlington</td></tr>
+        <tr><td><strong>Relé de estado sólido / TRIAC</strong></td><td>Conmuta corriente alterna sin partes móviles, con optoacoplador.</td><td>ON/OFF, silencioso y sin desgaste.</td><td>Calefactores AC que encienden y apagan muchas veces.</td><td>Tiristores: SCR y TRIAC</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="block">
+    <h3>Tres maneras de dar la orden</h3>
+    <div class="grid3">
+      <div class="card"><span class="eyebrow">Digital ON/OFF</span><p>El actuador está encendido o apagado. Basta <code>digitalWrite(pin, HIGH)</code>.</p><p class="conv">Relé, solenoide, buzzer activo, LED indicador</p></div>
+      <div class="card"><span class="eyebrow">PWM (modulación por ancho de pulso)</span><p>Se enciende y apaga muy rápido; el porcentaje de tiempo encendido (ciclo útil) fija la potencia promedio. <code>ledcWrite(pin, valor)</code>.</p><p class="conv">Velocidad de motor y ventilador, brillo de LED</p></div>
+      <div class="card"><span class="eyebrow">Pulso de posición</span><p>Un pulso de 0.5 a 2.5 ms cada 20 ms le indica al servo el ángulo. <code>servo.write(90)</code>.</p><p class="conv">Servomotores SG90 y MG996R</p></div>
+    </div>
+  </div>
+
+  <div class="block">
+    <h3>Explorador PWM: el ESP32 controlando un ventilador de 12 V</h3>
+    <div class="fig">
+      <div class="grid2" style="align-items:center">
+        <div style="display:grid;gap:12px">
+          <label for="pwm">Ciclo útil: <strong id="pwmPct" class="mono">50 %</strong></label>
+          <input type="range" id="pwm" min="0" max="100" value="50">
+          <dl class="kv">
+            <dt>ledcWrite</dt><dd class="mono" id="pwmVal">ledcWrite(25, 128); // 8 bits</dd>
+            <dt>V promedio</dt><dd class="mono" id="pwmV">6.0 V de 12 V</dd>
+            <dt>Frecuencia</dt><dd class="mono">20 kHz (inaudible)</dd>
+          </dl>
+          <p class="fb" style="font-size:.88rem;color:var(--muted)" id="pwmNote"></p>
+        </div>
+        <div style="display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:center">
+          <svg class="fan" viewBox="0 0 100 100" aria-hidden="true">
+            <circle cx="50" cy="50" r="46" fill="none" stroke="var(--muted)" stroke-width="3"/>
+            <g class="blades" id="blades">
+              <path d="M50 50 C 40 30, 48 10, 60 8 C 64 22, 60 40, 50 50Z" fill="var(--act)"/>
+              <path d="M50 50 C 40 30, 48 10, 60 8 C 64 22, 60 40, 50 50Z" fill="var(--act)" transform="rotate(120 50 50)"/>
+              <path d="M50 50 C 40 30, 48 10, 60 8 C 64 22, 60 40, 50 50Z" fill="var(--act)" transform="rotate(240 50 50)"/>
+            </g>
+            <circle cx="50" cy="50" r="7" fill="var(--ink)"/>
+          </svg>
+          <svg viewBox="0 0 300 110" id="pwmWave" role="img" aria-label="Forma de onda PWM"></svg>
+        </div>
+      </div>
+      <figcaption>Mueve el control: el ancho del pulso cambia pero el voltaje alto sigue siendo 12 V. Lo que cambia es la energía promedio que recibe el motor.</figcaption>
+    </div>
+  </div>
+
+  <div class="block">
+    <h3>El diodo de protección (flyback)</h3>
+    <p class="prose">Un motor, una bomba o la bobina de un relé almacenan energía en su campo magnético. Al apagarlos de golpe esa energía produce un pico de voltaje inverso que puede destruir el transistor. Un diodo (1N4007 o 1N5819) en paralelo con la carga, con el cátodo hacia el positivo, le da a esa corriente un camino seguro. Los módulos de relé y el L298N ya lo traen; con un MOSFET suelto hay que ponerlo.</p>
+  </div>
+</section>
+
+<!-- ===================== 5. SENSOR + ACTUADOR ===================== -->
+<section class="unit" id="sistema" data-label="Sensor + actuador" hidden>
+  <div class="unit-head">
+    <span class="eyebrow">Visión de sistemas</span>
+    <h2>Sensores y actuadores se necesitan mutuamente</h2>
+  </div>
+  <div class="prose">
+    <p>Un sensor sin actuador produce datos que nadie usa para cambiar nada. Un actuador sin sensor actúa a ciegas: no sabe si su acción fue suficiente, excesiva o si falló. Juntos, con el controlador en medio, forman un <strong>sistema de control</strong>.</p>
+  </div>
+  <div class="grid2">
+    <figure class="fig">
+      <h4>Lazo abierto</h4>
+      <div class="scroll"><svg viewBox="0 0 460 150" role="img" aria-label="Lazo abierto: consigna, controlador, actuador, planta">
+        <defs><marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker></defs>
+        <text x="10" y="70" class="t-muted" font-size="12">Orden</text>
+        <path d="M48 66 H70" class="ln" marker-end="url(#ah2)"/>
+        <rect x="74" y="40" width="110" height="52" rx="8" class="b-ctrl blk"/><text x="129" y="71" text-anchor="middle" class="t-ink" font-size="13">ESP32</text>
+        <path d="M184 66 H210" class="ln" marker-end="url(#ah2)"/>
+        <rect x="214" y="40" width="110" height="52" rx="8" class="b-act blk"/><text x="269" y="71" text-anchor="middle" class="t-ink" font-size="13">Bomba</text>
+        <path d="M324 66 H350" class="ln" marker-end="url(#ah2)"/>
+        <rect x="354" y="40" width="96" height="52" rx="8" class="b-neutral blk"/><text x="402" y="71" text-anchor="middle" class="t-ink" font-size="13">Matera</text>
+        <text x="230" y="130" text-anchor="middle" class="t-muted" font-size="12">Riega 5 min cada 12 h, llueva o no.</text>
+      </svg></div>
+      <figcaption>El controlador actúa por tiempo o por una orden fija. Es simple y barato, pero no corrige errores: si la tierra ya está húmeda, igual riega.</figcaption>
+    </figure>
+    <figure class="fig">
+      <h4>Lazo cerrado (realimentado)</h4>
+      <div class="scroll"><svg viewBox="0 0 460 170" role="img" aria-label="Lazo cerrado con sensor de humedad que realimenta al controlador">
+        <text x="6" y="58" class="t-muted" font-size="12">Consigna</text>
+        <path d="M60 54 H70" class="ln" marker-end="url(#ah2)"/>
+        <rect x="74" y="28" width="110" height="52" rx="8" class="b-ctrl blk"/><text x="129" y="59" text-anchor="middle" class="t-ink" font-size="13">ESP32</text>
+        <path d="M184 54 H210" class="ln" marker-end="url(#ah2)"/>
+        <rect x="214" y="28" width="110" height="52" rx="8" class="b-act blk"/><text x="269" y="59" text-anchor="middle" class="t-ink" font-size="13">Bomba</text>
+        <path d="M324 54 H350" class="ln" marker-end="url(#ah2)"/>
+        <rect x="354" y="28" width="96" height="52" rx="8" class="b-neutral blk"/><text x="402" y="59" text-anchor="middle" class="t-ink" font-size="13">Matera</text>
+        <path d="M402 80 V132 H330" class="ln" marker-end="url(#ah2)"/>
+        <rect x="214" y="110" width="112" height="44" rx="8" class="b-sensor blk"/><text x="270" y="137" text-anchor="middle" class="t-ink" font-size="12">Sensor humedad</text>
+        <path d="M214 132 H129 V84" class="ln" marker-end="url(#ah2)"/>
+        <text x="150" y="126" class="t-muted" font-size="11">realimentación</text>
+      </svg></div>
+      <figcaption>El sensor mide el efecto del actuador y el controlador corrige. Solo riega cuando la tierra está seca y se detiene cuando alcanzó la humedad deseada.</figcaption>
+    </figure>
+  </div>
+
+  <div class="block">
+    <h3>Histéresis: por qué el ventilador no debe encender y apagar cada segundo</h3>
+    <div class="grid2">
+      <div class="prose">
+        <p>Si la regla fuera «encender el calefactor si T &lt; 37.5 °C y apagarlo si T ≥ 37.5 °C», cerca de 37.5 °C el ruido del sensor haría que el relé conmute muchas veces por minuto. El relé se desgasta, hace ruido y el calefactor sufre.</p>
+        <p>La solución es usar <strong>dos umbrales</strong>: encender por debajo de 37.3 °C y apagar por encima de 37.8 °C. Entre ambos el actuador <strong>mantiene su estado anterior</strong>. Esa banda muerta se llama histéresis y es la forma más usada de control ON/OFF.</p>
+      </div>
+      <figure class="fig">
+        <div class="scroll"><svg viewBox="0 0 420 200" role="img" aria-label="Gráfica de histéresis del calefactor">
+          <line x1="50" y1="20" x2="50" y2="170" class="ln-ink"/><line x1="50" y1="170" x2="400" y2="170" class="ln-ink"/>
+          <text x="225" y="195" text-anchor="middle" class="t-muted" font-size="12">Temperatura (°C)</text>
+          <text x="14" y="62" class="t-muted t-mono" font-size="11">ON</text><text x="10" y="152" class="t-muted t-mono" font-size="11">OFF</text>
+          <line x1="150" y1="40" x2="150" y2="175" stroke="var(--line)" stroke-dasharray="4 4"/>
+          <line x1="290" y1="40" x2="290" y2="175" stroke="var(--line)" stroke-dasharray="4 4"/>
+          <text x="150" y="186" text-anchor="middle" class="t-ink t-mono" font-size="11">37.3</text>
+          <text x="290" y="186" text-anchor="middle" class="t-ink t-mono" font-size="11">37.8</text>
+          <path d="M60 58 H290 V148" fill="none" stroke="var(--act)" stroke-width="3"/>
+          <path d="M390 148 H150 V58" fill="none" stroke="var(--ctrl)" stroke-width="3" stroke-dasharray="7 5"/>
+          <text x="210" y="50" text-anchor="middle" class="t-ink" font-size="11">calentando ↑</text>
+          <text x="220" y="140" text-anchor="middle" class="t-ink" font-size="11">← enfriando</text>
+        </svg></div>
+        <figcaption>Calentando, el relé se apaga al pasar 37.8 °C. Enfriando, se enciende de nuevo al bajar de 37.3 °C.</figcaption>
+      </figure>
+    </div>
+  </div>
+
+  <div class="block">
+    <h3>Parejas sensor–actuador</h3>
+    <div class="tablebox"><table>
+      <thead><tr><th>Variable</th><th>Sensor (mide)</th><th>Actuador (corrige)</th><th>Etapa de potencia</th><th>Aplicación</th></tr></thead>
+      <tbody>
+        <tr><td>Temperatura</td><td>DHT22, DS18B20, LM35</td><td>Resistencia calefactora, ventilador, celda Peltier</td><td>Relé o MOSFET</td><td>Incubadora, invernadero</td></tr>
+        <tr><td>Humedad del aire</td><td>DHT22</td><td>Humidificador ultrasónico, ventilador de extracción</td><td>Relé o MOSFET</td><td>Incubadora, cuarto de cultivo</td></tr>
+        <tr><td>Humedad del suelo</td><td>Sensor capacitivo de suelo</td><td>Bomba de agua, electroválvula</td><td>Relé o MOSFET</td><td>Riego automático</td></tr>
+        <tr><td>Distancia</td><td>HC-SR04</td><td>Motores DC, buzzer</td><td>Puente H L298N</td><td>Carro evasor, parqueo asistido</td></tr>
+        <tr><td>Obstáculo / borde</td><td>FC-51, TCRT5000</td><td>Motores DC</td><td>Puente H</td><td>Seguidor de línea, sumobot</td></tr>
+        <tr><td>Luz ambiente</td><td>LDR, BH1750</td><td>Tira LED, bombillo, servo de persiana</td><td>MOSFET o relé</td><td>Iluminación inteligente</td></tr>
+        <tr><td>Presencia</td><td>PIR HC-SR501</td><td>Bombillo, cerradura (solenoide), alarma</td><td>Relé</td><td>Domótica, seguridad</td></tr>
+        <tr><td>Nivel de agua</td><td>Flotador, ultrasónico</td><td>Bomba, electroválvula</td><td>Relé</td><td>Tanque elevado</td></tr>
+        <tr><td>Gas / humo</td><td>MQ-2, MQ-135</td><td>Ventilador de extracción, buzzer</td><td>Relé o MOSFET</td><td>Cocina, laboratorio</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</section>
+
+<!-- ===================== 6. INCUBADORA ===================== -->
+<section class="unit" id="incubadora" data-label="Proyecto: incubadora" hidden>
+  <div class="unit-head">
+    <span class="eyebrow">Proyecto integrador</span>
+    <h2>Incubadora de huevos automática con ESP32</h2>
+    <p class="prose" style="color:var(--muted)">Mantiene el ambiente que un huevo de gallina necesita durante 21 días: temperatura entre 37.3 y 37.8 °C, humedad entre 50 % y 58 % y volteo periódico. Un solo sensor alimenta cinco actuadores, así que es un buen ejemplo de cómo un sistema reparte el trabajo.</p>
+  </div>
+
+  <div class="grid3">
+    <div class="card"><span class="eyebrow" style="color:var(--sensor)">Entrada</span><h4>DHT22</h4><p>Temperatura y humedad. Se usa el DHT22 y no el DHT11 porque su error es de ±0.5 °C; el DHT11 tiene ±2 °C, demasiado para una incubadora.</p></div>
+    <div class="card"><span class="eyebrow" style="color:var(--ctrl)">Proceso</span><h4>ESP32 Dev Module</h4><p>Compara con las consignas, aplica histéresis, cuenta el tiempo de volteo, genera alarmas y envía datos por Bluetooth a la app.</p></div>
+    <div class="card"><span class="eyebrow" style="color:var(--act)">Salidas</span><h4>Cinco actuadores</h4><p>Resistencia calefactora, humidificador, ventilador, servo de volteo y buzzer con LED de alarma.</p></div>
+  </div>
+
+  <div class="block">
+    <h3>Papel de cada actuador</h3>
+    <div class="tablebox"><table>
+      <thead><tr><th>Actuador</th><th>Función en el sistema</th><th>Tipo de control</th><th>Driver</th><th>GPIO</th><th>Alimentación</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Resistencia calefactora PTC</strong></td><td>Sube la temperatura del aire</td><td>ON/OFF con histéresis</td><td>Relé canal 1</td><td class="num">26</td><td class="num">12 V · ≈3 A</td></tr>
+        <tr><td><strong>Humidificador ultrasónico</strong></td><td>Sube la humedad con niebla de agua</td><td>ON/OFF con histéresis</td><td>Relé canal 2</td><td class="num">27</td><td class="num">5 V · ≈300 mA</td></tr>
+        <tr><td><strong>Ventilador 12 V</strong></td><td>Reparte el calor de forma uniforme; a máxima velocidad renueva aire y baja temperatura o humedad</td><td>PWM: 30 % normal, 100 % exceso</td><td>MOSFET IRLZ44N</td><td class="num">25</td><td class="num">12 V · ≈150 mA</td></tr>
+        <tr><td><strong>Servo MG996R</strong></td><td>Voltea la bandeja de huevos 45° ↔ 135° cada 2 horas</td><td>Posición (pulso)</td><td>Ninguno, señal directa</td><td class="num">13</td><td class="num">5 V · picos 1 A</td></tr>
+        <tr><td><strong>Buzzer activo + LED</strong></td><td>Avisa si la temperatura sale del rango seguro o falla el sensor</td><td>ON/OFF</td><td>Módulo con transistor</td><td class="num">14 · 2</td><td class="num">3.3–5 V</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <!-- Diagrama de bloques -->
+  <div class="block">
+    <h3>Diagrama de bloques</h3>
+    <figure class="fig">
+      <div class="scroll"><svg viewBox="0 0 960 470" style="min-width:720px" role="img" aria-label="Diagrama de bloques de la incubadora">
+        <defs><marker id="ah3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker></defs>
+        <!-- column labels -->
+        <text x="95" y="22" text-anchor="middle" class="t-muted t-mono" font-size="11">ENTRADA</text>
+        <text x="345" y="22" text-anchor="middle" class="t-muted t-mono" font-size="11">PROCESO</text>
+        <text x="620" y="22" text-anchor="middle" class="t-muted t-mono" font-size="11">ETAPA DE POTENCIA</text>
+        <text x="850" y="22" text-anchor="middle" class="t-muted t-mono" font-size="11">SALIDA (ACTUADORES)</text>
+        <!-- sensors -->
+        <rect x="20" y="110" width="150" height="70" rx="10" class="b-sensor blk"/>
+        <text x="95" y="140" text-anchor="middle" class="t-ink" font-weight="600" font-size="15">DHT22</text>
+        <text x="95" y="162" text-anchor="middle" class="t-muted" font-size="12">temperatura y humedad</text>
+        <rect x="20" y="220" width="150" height="60" rx="10" class="b-sensor blk"/>
+        <text x="95" y="246" text-anchor="middle" class="t-ink" font-weight="600" font-size="14">Reloj interno</text>
+        <text x="95" y="266" text-anchor="middle" class="t-muted" font-size="12">millis(): tiempo</text>
+        <!-- ESP32 -->
+        <rect x="250" y="80" width="190" height="230" rx="12" class="b-ctrl blk"/>
+        <text x="345" y="112" text-anchor="middle" class="t-ink" font-weight="700" font-size="17">ESP32</text>
+        <text x="345" y="140" text-anchor="middle" class="t-muted" font-size="12">• compara con consignas</text>
+        <text x="345" y="162" text-anchor="middle" class="t-muted" font-size="12">• histéresis T y H</text>
+        <text x="345" y="184" text-anchor="middle" class="t-muted" font-size="12">• PWM del ventilador</text>
+        <text x="345" y="206" text-anchor="middle" class="t-muted" font-size="12">• temporizador de volteo</text>
+        <text x="345" y="228" text-anchor="middle" class="t-muted" font-size="12">• alarmas y estado seguro</text>
+        <text x="345" y="250" text-anchor="middle" class="t-muted" font-size="12">• envío por Bluetooth</text>
+        <path d="M170 145 H246" class="ln" marker-end="url(#ah3)"/>
+        <path d="M170 250 H246" class="ln" marker-end="url(#ah3)"/>
+        <!-- BT app -->
+        <rect x="270" y="360" width="150" height="54" rx="10" class="b-neutral blk"/>
+        <text x="345" y="384" text-anchor="middle" class="t-ink" font-size="13" font-weight="600">App Inventor</text>
+        <text x="345" y="402" text-anchor="middle" class="t-muted" font-size="11">monitoreo por Bluetooth</text>
+        <path d="M345 310 V356" class="ln" marker-end="url(#ah3)" stroke-dasharray="5 4"/>
+        <!-- drivers -->
+        <rect x="545" y="50" width="150" height="56" rx="8" class="b-pow blk"/><text x="620" y="74" text-anchor="middle" class="t-ink" font-size="13" font-weight="600">Relé canal 1</text><text x="620" y="93" text-anchor="middle" class="t-muted t-mono" font-size="11">GPIO 26</text>
+        <rect x="545" y="122" width="150" height="56" rx="8" class="b-pow blk"/><text x="620" y="146" text-anchor="middle" class="t-ink" font-size="13" font-weight="600">Relé canal 2</text><text x="620" y="165" text-anchor="middle" class="t-muted t-mono" font-size="11">GPIO 27</text>
+        <rect x="545" y="194" width="150" height="56" rx="8" class="b-pow blk"/><text x="620" y="218" text-anchor="middle" class="t-ink" font-size="13" font-weight="600">MOSFET IRLZ44N</text><text x="620" y="237" text-anchor="middle" class="t-muted t-mono" font-size="11">GPIO 25 · PWM</text>
+        <rect x="545" y="266" width="150" height="56" rx="8" class="b-neutral blk"/><text x="620" y="290" text-anchor="middle" class="t-ink" font-size="13">señal directa</text><text x="620" y="309" text-anchor="middle" class="t-muted t-mono" font-size="11">GPIO 13</text>
+        <rect x="545" y="338" width="150" height="56" rx="8" class="b-neutral blk"/><text x="620" y="362" text-anchor="middle" class="t-ink" font-size="13">módulo buzzer</text><text x="620" y="381" text-anchor="middle" class="t-muted t-mono" font-size="11">GPIO 14 · 2</text>
+        <!-- esp -> drivers bus -->
+        <path d="M440 195 H490 V78 H541" class="ln" marker-end="url(#ah3)"/>
+        <path d="M490 150 H541" class="ln" marker-end="url(#ah3)"/>
+        <path d="M490 195 V222 H541" class="ln" marker-end="url(#ah3)"/>
+        <path d="M490 222 V294 H541" class="ln" marker-end="url(#ah3)"/>
+        <path d="M490 294 V366 H541" class="ln" marker-end="url(#ah3)"/>
+        <!-- actuators -->
+        <g id="bd-cal"><rect x="770" y="50" width="170" height="56" rx="8" class="b-act blk"/><text x="855" y="74" text-anchor="middle" class="t-ink" font-size="13" font-weight="600">Resistencia PTC</text><text x="855" y="93" text-anchor="middle" class="t-muted" font-size="11">calienta</text></g>
+        <g id="bd-hum"><rect x="770" y="122" width="170" height="56" rx="8" class="b-act blk"/><text x="855" y="146" text-anchor="middle" class="t-ink" font-size="13" font-weight="600">Humidificador</text><text x="855" y="165" text-anchor="middle" class="t-muted" font-size="11">humedece</text></g>
+        <g id="bd-ven"><rect x="770" y="194" width="170" height="56" rx="8" class="b-act blk"/><text x="855" y="218" text-anchor="middle" class="t-ink" font-size="13" font-weight="600">Ventilador 12 V</text><text x="855" y="237" text-anchor="middle" class="t-muted" font-size="11">circula / renueva aire</text></g>
+        <g id="bd-ser"><rect x="770" y="266" width="170" height="56" rx="8" class="b-act blk"/><text x="855" y="290" text-anchor="middle" class="t-ink" font-size="13" font-weight="600">Servo MG996R</text><text x="855" y="309" text-anchor="middle" class="t-muted" font-size="11">voltea los huevos</text></g>
+        <g id="bd-alm"><rect x="770" y="338" width="170" height="56" rx="8" class="b-act blk"/><text x="855" y="362" text-anchor="middle" class="t-ink" font-size="13" font-weight="600">Buzzer + LED</text><text x="855" y="381" text-anchor="middle" class="t-muted" font-size="11">alarma</text></g>
+        <path d="M695 78 H766" class="ln" marker-end="url(#ah3)"/><path d="M695 150 H766" class="ln" marker-end="url(#ah3)"/>
+        <path d="M695 222 H766" class="ln" marker-end="url(#ah3)"/><path d="M695 294 H766" class="ln" marker-end="url(#ah3)"/>
+        <path d="M695 366 H766" class="ln" marker-end="url(#ah3)"/>
+        <!-- power -->
+        <rect x="545" y="420" width="150" height="40" rx="8" class="b-pow blk"/><text x="620" y="445" text-anchor="middle" class="t-ink" font-size="12">Fuente 12 V + buck 5 V</text>
+        <path d="M545 440 H230 V140 H246" fill="none" stroke="var(--pow)" stroke-width="1.6" stroke-dasharray="3 4" marker-end="url(#ah3)"/>
+        <path d="M695 440 H720 V60 H766" fill="none" stroke="var(--pow)" stroke-width="1.6" stroke-dasharray="3 4"/>
+        <!-- feedback loop -->
+        <path d="M940 78 H952 V456 H8 V160 H16" fill="none" stroke="var(--sensor)" stroke-width="2" stroke-dasharray="8 5" marker-end="url(#ah3)"/>
+        <rect x="770" y="440" width="170" height="26" rx="6" fill="var(--surface)" stroke="none"/>
+        <text x="855" y="458" text-anchor="middle" font-size="12" style="fill:var(--sensor)">aire de la incubadora (planta)</text>
+      </svg></div>
+      <div class="legend"><span><i style="background:var(--muted)"></i>señal de mando</span><span><i style="background:var(--pow)"></i>energía</span><span><i style="background:var(--sensor)"></i>realimentación a través del aire</span><span><i style="background:var(--muted);opacity:.6"></i>datos inalámbricos</span></div>
+      <figcaption>Figura 2. La línea verde cierra el lazo: los actuadores cambian el aire de la incubadora y el DHT22 vuelve a medirlo. Observa que el servo y el buzzer no necesitan etapa de potencia porque su corriente de señal es pequeña.</figcaption>
+    </figure>
+  </div>
+
+  <!-- Simulador -->
+  <div class="block">
+    <h3>Simulador: el lazo de control funcionando</h3>
+    <p class="prose">El simulador ejecuta la misma lógica del programa del ESP32 sobre un modelo térmico simple. Abre la puerta para provocar una perturbación o simula una falla del calefactor y observa cómo reacciona cada actuador.</p>
+    <div class="fig">
+      <div class="sim">
+        <div style="display:grid;gap:12px;min-width:0">
+          <div class="readout">
+            <div class="meter"><div class="l">Temperatura (DHT22)</div><div class="v" id="sT" style="color:var(--act)">--</div></div>
+            <div class="meter"><div class="l">Humedad relativa</div><div class="v" id="sH" style="color:var(--wire-sig)">--</div></div>
+          </div>
+          <canvas id="chart" width="640" height="260" aria-label="Gráfica de temperatura y humedad en el tiempo"></canvas>
+          <div class="legend"><span><i style="background:var(--act)"></i>temperatura (eje izq.)</span><span><i style="background:var(--wire-sig)"></i>humedad (eje der.)</span><span><i style="background:var(--ok);opacity:.4"></i>banda objetivo de T</span></div>
+          <div class="row">
+            <button class="primary" id="sPlay">Pausar</button>
+            <button id="sDoor">Abrir la puerta 10 s</button>
+            <button id="sFail" aria-pressed="false">Simular falla del calefactor</button>
+            <button id="sReset">Reiniciar desde 24 °C</button>
+          </div>
+          <span class="mono" style="color:var(--muted);font-size:.78rem" id="sClock">tiempo simulado 00:00</span>
+        </div>
+        <div class="acts" id="sActs">
+          <div class="actrow" data-a="cal"><span class="dot"></span><div>Resistencia calefactora<small>relé 1 · GPIO 26</small></div><span class="st">OFF</span></div>
+          <div class="actrow" data-a="hum"><span class="dot"></span><div>Humidificador<small>relé 2 · GPIO 27</small></div><span class="st">OFF</span></div>
+          <div class="actrow" data-a="ven"><span class="dot"></span><div>Ventilador<small>MOSFET · GPIO 25 · PWM</small></div><span class="st">30 %</span></div>
+          <div class="actrow" data-a="ser"><span class="dot"></span><div>Servo de volteo<small>GPIO 13</small></div><span class="st">45°</span></div>
+          <div class="actrow alarm" data-a="alm"><span class="dot"></span><div>Alarma<small>buzzer GPIO 14 · LED GPIO 2</small></div><span class="st">OFF</span></div>
+          <p class="note" id="sMsg" style="font-size:.88rem">Arrancando: la incubadora está a temperatura ambiente, el calefactor y el humidificador encienden.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Diagrama de flujo -->
+  <div class="block">
+    <h3>Diagrama de flujo del programa</h3>
+    <figure class="fig">
+      <div class="scroll"><svg viewBox="0 0 840 1310" style="min-width:600px;max-width:760px;margin:0 auto" role="img" aria-label="Diagrama de flujo del programa de la incubadora">
+        <defs><marker id="ah4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker></defs>
+        <g id="flow"></g>
+      </svg></div>
+      <div class="legend"><span><i style="background:var(--ctrl)"></i>proceso / decisión</span><span><i style="background:var(--sensor)"></i>entrada o salida de datos</span><span><i style="background:var(--act)"></i>orden a un actuador</span><span><i style="background:var(--pow)"></i>estado seguro</span></div>
+      <figcaption>Figura 3. Cada rombo es una comparación con un umbral. Cuando ninguna condición de un par se cumple (por ejemplo, 37.3 ≤ T ≤ 37.8), el actuador conserva su estado: eso es la histéresis.</figcaption>
+    </figure>
+  </div>
+
+  <!-- Conexiones -->
+  <div class="block">
+    <h3>Diagrama de conexiones eléctricas</h3>
+    <figure class="fig">
+      <div class="scroll"><svg viewBox="0 0 1030 640" style="min-width:780px" role="img" aria-label="Diagrama de conexiones de la incubadora">
+        <g id="wiring"></g>
+      </svg></div>
+      <div class="legend"><span><i style="background:var(--wire-12v)"></i>12 V</span><span><i style="background:var(--wire-5v)"></i>5 V</span><span><i style="background:var(--wire-3v3)"></i>3.3 V</span><span><i style="background:var(--wire-gnd)"></i>GND</span><span><i style="background:var(--wire-sig)"></i>señal</span></div>
+      <figcaption>Figura 4. Esquema de conexiones (distribución lógica, no la posición física de los pines en la placa). Las alimentaciones se indican con etiquetas de red: todos los puntos marcados «GND» están unidos entre sí, igual con «5V» y «12V».</figcaption>
+    </figure>
+    <div class="tablebox"><table>
+      <thead><tr><th>Elemento</th><th>Pin del elemento</th><th>Conectar a</th><th>Observación</th></tr></thead>
+      <tbody>
+        <tr><td>DHT22</td><td>VCC · DATA · GND</td><td class="num">3V3 · GPIO 4 · GND</td><td>Resistencia de 10 kΩ entre DATA y 3V3 si el módulo no la trae</td></tr>
+        <tr><td>Módulo relé 2 canales</td><td>VCC · GND · IN1 · IN2</td><td class="num">5V · GND · GPIO 26 · GPIO 27</td><td>Se activa con LOW en la mayoría de módulos. Debe aceptar disparo a 3.3 V</td></tr>
+        <tr><td>Relé 1 (contactos)</td><td>COM · NO</td><td class="num">12V · (+) resistencia PTC</td><td>(−) de la PTC a GND</td></tr>
+        <tr><td>Relé 2 (contactos)</td><td>COM · NO</td><td class="num">5V · (+) humidificador</td><td>(−) del humidificador a GND</td></tr>
+        <tr><td>MOSFET IRLZ44N</td><td>G · D · S</td><td class="num">GPIO 25 (vía 220 Ω) · (−) ventilador · GND</td><td>10 kΩ de G a GND; diodo 1N4007 en paralelo con el ventilador</td></tr>
+        <tr><td>Ventilador 12 V</td><td>(+) · (−)</td><td class="num">12V · Drenador</td><td>El MOSFET conmuta el lado negativo (low-side)</td></tr>
+        <tr><td>Servo MG996R</td><td>Señal · V+ · GND</td><td class="num">GPIO 13 · 5V · GND</td><td>Alimentarlo del buck, nunca del pin 5V del ESP32</td></tr>
+        <tr><td>Buzzer activo</td><td>I/O · VCC · GND</td><td class="num">GPIO 14 · 3V3 · GND</td><td>Evitar GPIO 12 (pin de arranque)</td></tr>
+        <tr><td>LED de alarma</td><td>Ánodo · cátodo</td><td class="num">GPIO 2 (vía 220 Ω) · GND</td><td>El GPIO 2 también es el LED azul de la placa</td></tr>
+        <tr><td>Buck LM2596</td><td>IN · OUT</td><td class="num">12V · 5V (VIN del ESP32)</td><td>Ajustar a 5.0 V con el multímetro antes de conectar</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <!-- Materiales -->
+  <details>
+    <summary>Lista de materiales</summary>
+    <div class="tablebox"><table>
+      <thead><tr><th>Material</th><th>Cant.</th><th>Rol</th></tr></thead>
+      <tbody>
+        <tr><td>ESP32 DevKit V1 (ESP32-WROOM-32)</td><td class="num">1</td><td>Controlador</td></tr>
+        <tr><td>Sensor DHT22 (AM2302)</td><td class="num">1</td><td>Sensor</td></tr>
+        <tr><td>Módulo relé de 2 canales 5 V con optoacoplador</td><td class="num">1</td><td>Potencia</td></tr>
+        <tr><td>MOSFET IRLZ44N + resistencias 220 Ω y 10 kΩ + diodo 1N4007</td><td class="num">1</td><td>Potencia</td></tr>
+        <tr><td>Resistencia calefactora PTC 12 V (40–50 W) o bombillo incandescente 12 V</td><td class="num">1</td><td>Actuador</td></tr>
+        <tr><td>Módulo humidificador ultrasónico 5 V (atomizador)</td><td class="num">1</td><td>Actuador</td></tr>
+        <tr><td>Ventilador 12 V de 80 mm</td><td class="num">1</td><td>Actuador</td></tr>
+        <tr><td>Servomotor MG996R (o SG90 para una maqueta liviana)</td><td class="num">1</td><td>Actuador</td></tr>
+        <tr><td>Buzzer activo + LED rojo + resistencia 220 Ω</td><td class="num">1</td><td>Actuador</td></tr>
+        <tr><td>Fuente 12 V 5 A y convertidor buck LM2596</td><td class="num">1</td><td>Potencia</td></tr>
+        <tr><td>Caja de icopor o madera con ventana de acrílico</td><td class="num">1</td><td>Planta</td></tr>
+      </tbody>
+    </table></div>
+  </details>
+
+  <!-- Código -->
+  <details>
+    <summary>Código para el ESP32 (Arduino IDE)</summary>
+    <div style="display:grid;gap:10px">
+      <p style="font-size:.9rem;color:var(--muted)">Placa: <strong>ESP32 Dev Module</strong> con el paquete ESP32 de Espressif versión 3.x. Librerías: <em>DHT sensor library</em> (Adafruit) y <em>ESP32Servo</em>. Envía por Bluetooth una línea <code>T,H,cal,hum,vent</code> cada 2 s, igual que el monitor de temperatura de la unidad anterior.</p>
+      <div class="row"><button id="copyCode">Copiar código</button><span id="copyMsg" class="mono" style="font-size:.8rem;color:var(--muted)"></span></div>
+      <pre class="code" id="code"></pre>
+    </div>
+  </details>
+</section>
+
+<!-- ===================== 7. RETO ===================== -->
+<section class="unit" id="reto" data-label="Reto: carro evasor" hidden>
+  <div class="unit-head">
+    <span class="eyebrow">Segundo ejemplo</span>
+    <h2>Reto: carro evasor de obstáculos</h2>
+    <p class="prose" style="color:var(--muted)">Aquí el actuador principal es el motor DC, y el reto es controlarlo en dos sentidos y a distintas velocidades. Usa los mismos sensores del sumobot: HC-SR04 al frente y dos FC-51 a los lados.</p>
+  </div>
+
+  <figure class="fig">
+    <div class="scroll"><svg viewBox="0 0 900 250" style="min-width:680px" role="img" aria-label="Diagrama de bloques del carro evasor">
+      <defs><marker id="ah5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker></defs>
+      <rect x="20" y="20" width="160" height="56" rx="8" class="b-sensor blk"/><text x="100" y="44" text-anchor="middle" class="t-ink" font-size="13" font-weight="600">HC-SR04 frontal</text><text x="100" y="63" text-anchor="middle" class="t-muted t-mono" font-size="11">TRIG 5 · ECHO 18</text>
+      <rect x="20" y="96" width="160" height="56" rx="8" class="b-sensor blk"/><text x="100" y="120" text-anchor="middle" class="t-ink" font-size="13" font-weight="600">FC-51 izquierdo</text><text x="100" y="139" text-anchor="middle" class="t-muted t-mono" font-size="11">GPIO 34</text>
+      <rect x="20" y="172" width="160" height="56" rx="8" class="b-sensor blk"/><text x="100" y="196" text-anchor="middle" class="t-ink" font-size="13" font-weight="600">FC-51 derecho</text><text x="100" y="215" text-anchor="middle" class="t-muted t-mono" font-size="11">GPIO 35</text>
+      <rect x="270" y="60" width="170" height="130" rx="12" class="b-ctrl blk"/><text x="355" y="100" text-anchor="middle" class="t-ink" font-size="16" font-weight="700">ESP32</text><text x="355" y="124" text-anchor="middle" class="t-muted" font-size="12">decide la maniobra</text><text x="355" y="144" text-anchor="middle" class="t-muted" font-size="12">avanzar · girar</text><text x="355" y="164" text-anchor="middle" class="t-muted" font-size="12">retroceder · frenar</text>
+      <path d="M180 48 H225 V110 H266" class="ln" marker-end="url(#ah5)"/><path d="M180 124 H266" class="ln" marker-end="url(#ah5)"/><path d="M180 200 H225 V140 H266" class="ln" marker-end="url(#ah5)"/>
+      <rect x="517" y="60" width="176" height="130" rx="10" class="b-pow blk"/><text x="605" y="102" text-anchor="middle" class="t-ink" font-size="15" font-weight="700">Puente H</text><text x="605" y="124" text-anchor="middle" class="t-ink" font-size="13">L298N</text><text x="605" y="150" text-anchor="middle" class="t-muted t-mono" font-size="10">ENA 25 · IN1 26 · IN2 27</text><text x="605" y="168" text-anchor="middle" class="t-muted t-mono" font-size="10">ENB 13 · IN3 32 · IN4 33</text>
+      <path d="M440 125 H513" class="ln" marker-end="url(#ah5)"/><text x="483" y="116" text-anchor="middle" class="t-muted" font-size="11">6 señales</text>
+      <rect x="760" y="40" width="125" height="64" rx="8" class="b-act blk"/><text x="822" y="68" text-anchor="middle" class="t-ink" font-size="13" font-weight="600">Motores izq.</text><text x="822" y="87" text-anchor="middle" class="t-muted" font-size="11">2 × TT en paralelo</text>
+      <rect x="760" y="146" width="125" height="64" rx="8" class="b-act blk"/><text x="822" y="174" text-anchor="middle" class="t-ink" font-size="13" font-weight="600">Motores der.</text><text x="822" y="193" text-anchor="middle" class="t-muted" font-size="11">2 × TT en paralelo</text>
+      <path d="M693 95 H725 V72 H756" class="ln" marker-end="url(#ah5)"/><path d="M693 155 H725 V178 H756" class="ln" marker-end="url(#ah5)"/>
+      <text x="605" y="225" text-anchor="middle" class="t-muted" font-size="12">Baterías 2 × 18650 (7.4 V) → L298N · buck 5 V → ESP32</text>
+    </svg></div>
+    <figcaption>Figura 5. Diagrama de bloques del carro evasor. Los pines coinciden con la lista de materiales del sumobot.</figcaption>
+  </figure>
+
+  <div class="block">
+    <h3>Probador de puente H</h3>
+    <div class="fig">
+      <div class="hb">
+        <div style="display:grid;gap:12px">
+          <div class="row"><button id="in1" aria-pressed="false">IN1 = LOW</button><button id="in2" aria-pressed="false">IN2 = LOW</button></div>
+          <label for="ena">ENA (PWM): <strong id="enaV" class="mono">180</strong> de 255</label>
+          <input type="range" id="ena" min="0" max="255" value="180">
+          <p id="hbOut" style="font-size:1.05rem"></p>
+        </div>
+        <svg viewBox="0 0 300 200" id="hbSvg" role="img" aria-label="Puente H con cuatro interruptores"></svg>
+      </div>
+    </div>
+    <div class="tablebox"><table>
+      <thead><tr><th>IN1</th><th>IN2</th><th>Motor</th><th>Maniobra del carro (ambos lados)</th></tr></thead>
+      <tbody>
+        <tr><td class="num">HIGH</td><td class="num">LOW</td><td>Gira hacia adelante</td><td>Izq. adelante + der. adelante = avanzar</td></tr>
+        <tr><td class="num">LOW</td><td class="num">HIGH</td><td>Gira hacia atrás</td><td>Izq. atrás + der. atrás = retroceder</td></tr>
+        <tr><td class="num">HIGH</td><td class="num">HIGH</td><td>Freno activo</td><td>Izq. adelante + der. atrás = girar a la derecha sobre su eje</td></tr>
+        <tr><td class="num">LOW</td><td class="num">LOW</td><td>Libre (se detiene por inercia)</td><td>Izq. atrás + der. adelante = girar a la izquierda</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h4>Lógica de evasión propuesta</h4>
+      <ol class="steps">
+        <li>Medir distancia con el HC-SR04 y leer los dos FC-51 (dan LOW al detectar).</li>
+        <li>Si la distancia es mayor a 25 cm y ningún FC-51 detecta: avanzar con PWM 200.</li>
+        <li>Si la distancia está entre 10 y 25 cm: reducir el PWM a 120 (el actuador responde de forma proporcional).</li>
+        <li>Si la distancia es menor a 10 cm: frenar, retroceder 300 ms y girar hacia el lado libre.</li>
+        <li>Si solo un FC-51 detecta: girar hacia el lado contrario.</li>
+      </ol>
+    </div>
+    <div class="card">
+      <h4>Entregable del reto</h4>
+      <ul class="clean">
+        <li>Diagrama de bloques identificando sensor, controlador, etapa de potencia y actuador.</li>
+        <li>Diagrama de flujo de la lógica de evasión.</li>
+        <li>Diagrama de conexiones con fuentes separadas y GND común.</li>
+        <li>Código comentado y video corto del carro funcionando.</li>
+        <li>Respuesta escrita: ¿qué pasa con el carro si se quitan los jumpers de ENA y ENB y no se envía PWM?</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="note"><strong>Práctica previa en Tinkercad:</strong> Tinkercad no tiene ESP32, así que la lógica se puede ensayar con Arduino Uno. Usa el sensor de temperatura TMP36 en lugar del DHT22, un <em>relé SPDT</em> que encienda una <em>bombilla</em> como calefactor, un <em>motor DC</em> con transistor NPN y diodo como ventilador, y el <em>controlador de motor L293D</em> como puente H del carro. Los conceptos y el diagrama son los mismos; solo cambian los números de pin.</div>
+</section>
+
+<!-- ===================== 8. EVALUACIÓN ===================== -->
+<section class="unit" id="evaluacion" data-label="Evaluación" hidden>
+  <div class="unit-head">
+    <span class="eyebrow">Autoevaluación</span>
+    <h2>Comprueba lo que aprendiste</h2>
+    <p class="score" id="score">0 de 10 respondidas · 0 correctas</p>
+  </div>
+  <div class="grid2" id="quiz"></div>
+  <div class="row"><button id="quizReset">Volver a intentar</button></div>
+  <div class="card">
+    <h4>Para la discusión en clase</h4>
+    <ul class="clean">
+      <li>En la incubadora, ¿qué debería hacer el sistema si el DHT22 se desconecta? ¿Por qué el estado seguro es apagar el calefactor y no encenderlo?</li>
+      <li>¿Por qué el ventilador usa PWM y el calefactor usa relé? ¿Se podría usar PWM en el calefactor? ¿Con qué driver?</li>
+      <li>Si el calefactor está encendido pero la temperatura no sube, ¿cómo lo puede detectar el programa? Propón una regla.</li>
+      <li>Escoge una pareja sensor–actuador de la tabla y diseña en una hoja su diagrama de bloques en lazo cerrado.</li>
+    </ul>
+  </div>
+</section>
+
+<nav class="pager" id="pager" aria-label="Unidad anterior y siguiente"></nav>
+</div></main>
+<footer class="brandfoot"><div class="wrap">Universidad de Córdoba · Ingeniería de Sistemas · OVA — Actuadores</div></footer>
+
+<script>
+/* ---------- navegación ---------- */
+const sections=[...document.querySelectorAll('section.unit')];
+const tabs=document.getElementById('tabs');
+sections.forEach((s,i)=>{const a=document.createElement('a');a.href='#'+s.id;a.innerHTML='<span>'+String(i+1).padStart(2,'0')+'</span>'+s.dataset.label;tabs.appendChild(a)});
+function show(){
+  let id=location.hash.slice(1); if(!sections.some(s=>s.id===id)) id='inicio';
+  sections.forEach(s=>s.hidden=s.id!==id);
+  [...tabs.children].forEach(a=>a.getAttribute('href')==='#'+id?a.setAttribute('aria-current','page'):a.removeAttribute('aria-current'));
+  const i=sections.findIndex(s=>s.id===id), p=document.getElementById('pager'); p.innerHTML='';
+  if(i>0) p.innerHTML+=`<a href="#${sections[i-1].id}"><small>← anterior</small>${sections[i-1].dataset.label}</a>`;
+  if(i<sections.length-1) p.innerHTML+=`<a class="next" href="#${sections[i+1].id}"><small>siguiente →</small>${sections[i+1].dataset.label}</a>`;
+  const cur=tabs.querySelector('[aria-current]'); if(cur) cur.scrollIntoView({block:'nearest',inline:'nearest'});
+  window.scrollTo({top:0});
+}
+addEventListener('hashchange',show); show();
+
+/* ---------- catálogo ---------- */
+const ACTS=[
+ {n:'Motor DC con reductora',t:'Movimiento',c:'Eléctrica → giro continuo',ctl:'Puente H (L298N, TB6612). Sentido con IN1/IN2, velocidad con PWM.',v:'3–12 V · 0.2–2 A',use:'Ruedas de carros y robots, bandas transportadoras',s:'Encoder (velocidad) o HC-SR04 (distancia a obstáculos)'},
+ {n:'Servomotor (SG90, MG996R)',t:'Movimiento',c:'Eléctrica → posición angular 0–180°',ctl:'Señal directa al GPIO. Pulso de 0.5–2.5 ms cada 20 ms (librería ESP32Servo).',v:'5 V · hasta 1 A en carga',use:'Brazos robóticos, volteo de bandejas, barreras, persianas',s:'Lleva un potenciómetro interno que realimenta su propia posición'},
+ {n:'Motor paso a paso (28BYJ-48, NEMA 17)',t:'Movimiento',c:'Eléctrica → giro por pasos exactos',ctl:'Driver ULN2003 o A4988. Pulsos STEP y nivel DIR.',v:'5–12 V · 0.2–1.5 A',use:'Impresoras 3D, dosificadores, relojes, cámaras',s:'Final de carrera para fijar la posición cero'},
+ {n:'Solenoide / cerradura eléctrica',t:'Movimiento',c:'Eléctrica → empuje lineal corto',ctl:'MOSFET o relé con diodo de protección. ON/OFF.',v:'12 V · 0.5–1 A',use:'Cerraduras, dispensadores, golpeadores',s:'Sensor magnético (reed) de puerta cerrada'},
+ {n:'Resistencia calefactora / PTC',t:'Térmico',c:'Eléctrica → calor (efecto Joule)',ctl:'Relé (ON/OFF) o MOSFET (PWM) para cargas DC.',v:'12 V · 2–4 A, o 110 V AC',use:'Incubadoras, secadores, cama caliente de impresora 3D',s:'DHT22, DS18B20 o termistor NTC'},
+ {n:'Celda Peltier',t:'Térmico',c:'Eléctrica → calor de un lado y frío del otro',ctl:'MOSFET con PWM; puente H si se quiere invertir frío/calor.',v:'12 V · 4–6 A',use:'Mini neveras, enfriamiento de componentes',s:'DS18B20 en la cara fría'},
+ {n:'Ventilador DC',t:'Fluidos',c:'Eléctrica → flujo de aire',ctl:'MOSFET o transistor con PWM para la velocidad.',v:'5 o 12 V · 0.1–0.3 A',use:'Ventilación, extracción, enfriamiento, recircular calor',s:'DHT22 (temperatura y humedad) o MQ-135 (calidad del aire)'},
+ {n:'Bomba de agua sumergible',t:'Fluidos',c:'Eléctrica → flujo de agua',ctl:'Relé o MOSFET con diodo. ON/OFF o PWM.',v:'3–12 V · 0.1–1 A',use:'Riego automático, fuentes, acuarios, llenado de tanques',s:'Sensor capacitivo de humedad de suelo o de nivel'},
+ {n:'Electroválvula',t:'Fluidos',c:'Eléctrica → abre o cierra el paso de agua o aire',ctl:'Relé o MOSFET con diodo. ON/OFF.',v:'12 V · 0.3–0.5 A',use:'Riego por goteo, neumática, dispensadores',s:'Caudalímetro YF-S201 o sensor de nivel'},
+ {n:'Humidificador ultrasónico',t:'Fluidos',c:'Eléctrica → vibración que convierte agua en niebla',ctl:'Su propio módulo, encendido con relé o MOSFET.',v:'5 V · 0.3 A',use:'Incubadoras, cultivos, terrarios',s:'DHT22 (humedad relativa)'},
+ {n:'LED, tira LED y bombillo',t:'Luz y sonido',c:'Eléctrica → luz',ctl:'GPIO con resistencia (LED); MOSFET con PWM (tira); relé (bombillo AC).',v:'3.3 V · 20 mA hasta 12 V · 2 A',use:'Indicadores, iluminación, semáforos',s:'LDR o BH1750 (luz ambiente), PIR (presencia)'},
+ {n:'Buzzer activo / pasivo',t:'Luz y sonido',c:'Eléctrica → sonido',ctl:'Activo: ON/OFF. Pasivo: frecuencia con tone().',v:'3.3–5 V · 20–30 mA',use:'Alarmas, avisos, cuenta regresiva',s:'Cualquier sensor que dispare una condición de alarma'},
+ {n:'Relé electromecánico',t:'Conmutación',c:'Eléctrica → cierra un contacto de potencia',ctl:'Módulo de relé con transistor y optoacoplador. ON/OFF.',v:'Bobina 5 V · contactos hasta 10 A 250 V AC',use:'Encender cargas AC o DC grandes desde el ESP32',s:'El sensor de la carga que conmuta'}
+];
+const types=['Todos',...new Set(ACTS.map(a=>a.t))];
+const filters=document.getElementById('filters'), catalog=document.getElementById('catalog');
+let cur='Todos';
+function renderCat(){
+  filters.innerHTML=''; types.forEach(t=>{const b=document.createElement('button');b.textContent=t;b.setAttribute('aria-pressed',t===cur);b.onclick=()=>{cur=t;renderCat()};filters.appendChild(b)});
+  catalog.innerHTML=ACTS.filter(a=>cur==='Todos'||a.t===cur).map(a=>`<article class="act-card"><header><h4>${a.n}</h4><span class="tag">${a.t}</span></header><span class="conv">${a.c}</span><dl class="kv"><dt>Control</dt><dd>${a.ctl}</dd><dt>Típico</dt><dd class="mono">${a.v}</dd><dt>Uso</dt><dd>${a.use}</dd></dl><p class="pair"><b>Sensor que lo complementa:</b> ${a.s}</p></article>`).join('');
+}
+renderCat();
+
+/* ---------- PWM ---------- */
+const pwm=document.getElementById('pwm');
+function renderPWM(){
+  const d=+pwm.value, val=Math.round(d/100*255), w=document.getElementById('pwmWave');
+  document.getElementById('pwmPct').textContent=d+' %';
+  document.getElementById('pwmVal').textContent=`ledcWrite(25, ${val}); // 8 bits`;
+  document.getElementById('pwmV').textContent=(d/100*12).toFixed(1)+' V de 12 V';
+  document.getElementById('pwmNote').textContent=d===0?'Ventilador detenido.':d<25?'Por debajo de ~25 % muchos ventiladores no alcanzan a arrancar: el par no vence la fricción.':d===100?'Siempre encendido: equivale a digitalWrite(HIGH).':'El motor recibe pulsos y, por su inercia, gira a una velocidad intermedia estable.';
+  let p='', x=20, per=65; const hi=20, lo=80;
+  p+=`M${x} ${lo}`;
+  for(let k=0;k<4;k++){const on=per*d/100; if(on>0){p+=` L${x} ${hi} L${x+on} ${hi} L${x+on} ${lo}`} p+=` L${x+per} ${lo}`; x+=per}
+  const avg=lo-(lo-hi)*d/100;
+  w.innerHTML=`<line x1="20" y1="${lo}" x2="285" y2="${lo}" stroke="var(--line)"/><text x="2" y="${hi+4}" font-size="10" class="t-muted t-mono">12V</text><text x="6" y="${lo+4}" font-size="10" class="t-muted t-mono">0V</text><path d="${p}" fill="none" stroke="var(--wire-sig)" stroke-width="2.4"/><line x1="20" y1="${avg}" x2="285" y2="${avg}" stroke="var(--act)" stroke-dasharray="5 4" stroke-width="2"/><text x="285" y="${avg-5}" text-anchor="end" font-size="10" style="fill:var(--act)">promedio</text><text x="20" y="104" font-size="10" class="t-muted">período = 50 µs a 20 kHz</text>`;
+  const b=document.getElementById('blades'); b.style.setProperty('--spd', d<25?'0s':(1.6-1.35*(d/100)).toFixed(2)+'s'); b.style.animationPlayState=d<25?'paused':'running';
+}
+pwm.addEventListener('input',renderPWM); renderPWM();
+
+/* ---------- diagrama de flujo ---------- */
+(function(){
+ const g=document.getElementById('flow'); let h='';
+ const CX=330, RX=640, LX=95;
+ const txt=(x,y,lines,cls='t-ink',fs=13)=>{const n=lines.length;return lines.map((l,i)=>`<text x="${x}" y="${y+(i-(n-1)/2)*16+4}" text-anchor="middle" class="${cls}" font-size="${fs}">${l}</text>`).join('')};
+ const term=(x,y,l)=>`<rect x="${x-80}" y="${y-22}" width="160" height="44" rx="22" class="b-neutral blk"/>`+txt(x,y,[l],'t-ink',14);
+ const proc=(x,y,lines,cls='b-ctrl',w=220)=>`<rect x="${x-w/2}" y="${y-26}" width="${w}" height="52" rx="6" class="${cls} blk"/>`+txt(x,y,lines,'t-ink',13);
+ const io=(x,y,lines,w=240)=>`<path d="M${x-w/2+16} ${y-26} H${x+w/2+8} L${x+w/2-16} ${y+26} H${x-w/2-8} Z" class="b-sensor blk"/>`+txt(x,y,lines);
+ const dec=(x,y,lines)=>`<path d="M${x} ${y-42} L${x+120} ${y} L${x} ${y+42} L${x-120} ${y} Z" class="b-ctrl blk"/>`+txt(x,y,lines,'t-ink',12.5);
+ const ar=(d)=>`<path d="${d}" class="ln" marker-end="url(#ah4)"/>`;
+ const lab=(x,y,t)=>`<text x="${x}" y="${y}" class="t-muted" font-size="12" font-weight="600">${t}</text>`;
+ h+=term(CX,40,'Inicio'); h+=ar(`M${CX} 62 V92`);
+ h+=proc(CX,120,['Configurar pines, PWM,','servo, DHT22 y Bluetooth'],'b-ctrl',240); h+=ar(`M${CX} 146 V172`);
+ h+=io(CX,200,['Leer T y H del DHT22']); h+=ar(`M${CX} 226 V251`);
+ h+=dec(CX,295,['¿Lectura','válida?']);
+ h+=lab(CX+126,286,'No'); h+=ar(`M${CX+120} 295 H${RX-112}`);
+ h+=proc(RX,295,['Estado seguro: calefactor OFF','+ alarma de sensor'],'b-pow',224);
+ h+=`<path d="M${RX+112} 295 H800 V1250 H${CX+84}" class="ln" marker-end="url(#ah4)"/>`;
+ const pair=(y,q,act,cls)=>{let s=dec(CX,y,q)+lab(CX+126,y-8,'Sí')+ar(`M${CX+120} ${y} H${RX-112}`)+proc(RX,y,act,cls||'b-act',224)+`<path d="M${RX} ${y+26} V${y+55} H${CX+4}" class="ln" marker-end="url(#ah4)"/>`+lab(CX-28,y+54,'No')+ar(`M${CX} ${y+42} V${y+68}`);return s};
+ h+=lab(CX+8,346,'Sí'); h+=ar(`M${CX} 337 V356`);
+ h+=pair(400,['¿T < 37.3 °C?'],['Calefactor ON','(relé 1 = LOW)']);
+ h+=pair(510,['¿T > 37.8 °C?'],['Calefactor OFF','(relé 1 = HIGH)']);
+ h+=pair(620,['¿H < 50 %?'],['Humidificador ON','(relé 2 = LOW)']);
+ h+=pair(730,['¿H > 58 %?'],['Humidificador OFF','(relé 2 = HIGH)']);
+ // ventilador: si / no con caja izquierda
+ h+=dec(CX,840,['¿T > 38.3 °C','o H > 65 %?']);
+ h+=lab(CX+126,832,'Sí')+ar(`M${CX+120} 840 H${RX-112}`)+proc(RX,840,['Ventilador 100 %','ledcWrite(25, 255)'],'b-act',224)+`<path d="M${RX} 866 V895 H${CX+4}" class="ln" marker-end="url(#ah4)"/>`;
+ h+=lab(CX-150,832,'No')+ar(`M${CX-120} 840 H${LX+76}`)+proc(LX,840,['Ventilador 30 %','ledcWrite(25, 77)'],'b-act',150)+`<path d="M${LX} 866 V895 H${CX-4}" class="ln" marker-end="url(#ah4)"/>`;
+ h+=ar(`M${CX} 882 V908`);
+ h+=dec(CX,950,['¿T > 39 °C','o T < 35 °C?']);
+ h+=lab(CX+126,942,'Sí')+ar(`M${CX+120} 950 H${RX-112}`)+proc(RX,950,['Buzzer y LED ON'],'b-act',224)+`<path d="M${RX} 976 V1005 H${CX+4}" class="ln" marker-end="url(#ah4)"/>`;
+ h+=lab(CX-150,942,'No')+ar(`M${CX-120} 950 H${LX+76}`)+proc(LX,950,['Buzzer y LED OFF'],'b-act',150)+`<path d="M${LX} 976 V1005 H${CX-4}" class="ln" marker-end="url(#ah4)"/>`;
+ h+=ar(`M${CX} 992 V1018`);
+ h+=pair(1060,['¿Pasaron 2 h','desde el volteo?'],['Servo: alternar','45° ↔ 135°']);
+ h+=io(CX,1170,['Enviar T,H,estados por Bluetooth'],270); h+=ar(`M${CX} 1196 V1222`);
+ h+=proc(CX,1250,['Esperar 2 s'],'b-ctrl',168);
+ h+=`<path d="M${CX-84} 1250 H30 V200 H${CX-126}" class="ln" marker-end="url(#ah4)"/>`;
+ h+=`<text x="38" y="720" class="t-muted" font-size="12" transform="rotate(-90 38 720)" text-anchor="middle">repetir indefinidamente (loop)</text>`;
+ g.innerHTML=h;
+})();
+
+/* ---------- diagrama de conexiones ---------- */
+(function(){
+ const g=document.getElementById('wiring'); let h='';
+ const box=(x,y,w,hh,cls,title,sub)=>`<rect x="${x}" y="${y}" width="${w}" height="${hh}" rx="8" class="${cls} blk"/><text x="${x+w/2}" y="${y+20}" text-anchor="middle" class="t-ink" font-weight="700" font-size="13">${title}</text>`+(sub?`<text x="${x+w/2}" y="${y+36}" text-anchor="middle" class="t-muted" font-size="11">${sub}</text>`:'');
+ const pin=(x,y,l,anchor)=>`<circle cx="${x}" cy="${y}" r="3.5" fill="var(--ink)"/><text x="${anchor==='end'?x-8:x+8}" y="${y+4}" text-anchor="${anchor||'start'}" class="t-ink t-mono" font-size="11">${l}</text>`;
+ const net=(x,y,label,cls,dir)=>{ // short stub + flag
+   const col={'5V':'var(--wire-5v)','12V':'var(--wire-12v)','GND':'var(--wire-gnd)','3V3':'var(--wire-3v3)'}[label];
+   const dx=dir==='left'?-26:26, fx=x+dx;
+   return `<path d="M${x} ${y} H${fx}" stroke="${col}" stroke-width="2.4" fill="none"/><rect x="${dir==='left'?fx-34:fx}" y="${y-9}" width="34" height="18" rx="3" fill="var(--surface)" stroke="${col}" stroke-width="1.5"/><text x="${dir==='left'?fx-17:fx+17}" y="${y+4}" text-anchor="middle" font-size="10" class="t-mono" style="fill:${col}">${label}</text>`};
+ const res=(x1,y,x2,label)=>{const m=(x1+x2)/2;return `<path d="M${x1} ${y} H${m-18} l3 -6 l6 12 l6 -12 l6 12 l6 -12 l3 6 H${x2}" class="w-sig"/><text x="${m}" y="${y-10}" text-anchor="middle" class="t-muted t-mono" font-size="10">${label}</text>`};
+ // ESP32
+ h+=`<rect x="380" y="40" width="150" height="520" rx="10" class="b-ctrl blk"/><text x="455" y="70" text-anchor="middle" class="t-ink" font-weight="700" font-size="16">ESP32</text><text x="455" y="88" text-anchor="middle" class="t-muted" font-size="11">Dev Module</text>`;
+ const L=[[110,'3V3'],[150,'GPIO 4'],[190,'GND'],[470,'VIN'],[510,'GND']];
+ L.forEach(([y,l])=>h+=pin(380,y,l));
+ const R=[[110,'GPIO 26'],[150,'GPIO 27'],[260,'GPIO 25'],[370,'GPIO 13'],[430,'GPIO 14'],[490,'GPIO 2']];
+ R.forEach(([y,l])=>h+=pin(530,y,l,'end'));
+ // DHT22
+ h+=box(100,70,140,150,'b-sensor','DHT22','sensor T y H');
+ h+=pin(240,110,'VCC','end')+pin(240,150,'DATA','end')+pin(240,190,'GND','end');
+ h+=`<path d="M240 110 H380" class="w-3v3"/><path d="M240 150 H380" class="w-sig"/><path d="M240 190 H380" class="w-gnd"/>`;
+ h+=`<path d="M310 110 V118 l-6 3 l12 6 l-12 6 l12 6 l-6 3 V150" class="w-3v3"/><circle cx="310" cy="110" r="3" fill="var(--wire-3v3)"/><circle cx="310" cy="150" r="3" fill="var(--wire-sig)"/><text x="322" y="134" class="t-muted t-mono" font-size="10">10k</text>`;
+ // power
+ h+=box(40,420,130,110,'b-pow','Fuente','12 V · 5 A');
+ h+=pin(170,450,'+12V','end')+pin(170,500,'GND','end');
+ h+=box(220,420,120,110,'b-pow','Buck','LM2596 → 5 V');
+ h+=`<path d="M170 450 H220" class="w-12v"/><path d="M170 500 H220" class="w-gnd"/>`;
+ h+=`<path d="M340 470 H380" class="w-5v"/><path d="M340 510 H380" class="w-gnd"/>`;
+ h+=`<text x="360" y="463" text-anchor="middle" class="t-muted t-mono" font-size="9">5V</text>`;
+ h+=`<path d="M195 450 V590 H900" class="w-12v"/><circle cx="195" cy="450" r="3" fill="var(--wire-12v)"/><text x="560" y="584" class="t-mono" font-size="11" style="fill:var(--wire-12v)">riel 12 V hacia actuadores</text>`;
+ h+=`<path d="M205 500 V610 H900" class="w-gnd"/><circle cx="205" cy="500" r="3" fill="var(--wire-gnd)"/><text x="560" y="624" class="t-mono" font-size="11" style="fill:var(--wire-gnd)">GND común</text>`;
+ // relay module
+ h+=box(600,50,150,140,'b-pow','Relé 2 canales','módulo 5 V');
+ h+=pin(600,110,'IN1')+pin(600,150,'IN2');
+ h+=`<path d="M530 110 H600" class="w-sig"/><path d="M530 150 H600" class="w-sig"/>`;
+ h+=`<path d="M650 50 V34" stroke="var(--wire-5v)" stroke-width="2.4"/><rect x="633" y="16" width="34" height="18" rx="3" fill="var(--surface)" stroke="var(--wire-5v)" stroke-width="1.5"/><text x="650" y="29" text-anchor="middle" font-size="10" class="t-mono" style="fill:var(--wire-5v)">5V</text>`;
+ h+=`<path d="M650 190 V206" stroke="var(--wire-gnd)" stroke-width="2.4"/><rect x="633" y="206" width="34" height="18" rx="3" fill="var(--surface)" stroke="var(--wire-gnd)" stroke-width="1.5"/><text x="650" y="219" text-anchor="middle" font-size="10" class="t-mono" style="fill:var(--wire-gnd)">GND</text>`;
+ h+=pin(750,85,'COM1','end')+pin(750,110,'NO1','end')+pin(750,135,'COM2','end')+pin(750,160,'NO2','end');
+ // PTC heater
+ h+=box(820,40,140,70,'b-act','Resistencia PTC','12 V');
+ h+=`<path d="M750 110 H820" class="w-12v"/>`+net(750,85,'12V','','right');
+ h+=net(960,90,'GND','','right');
+ // humidifier
+ h+=box(820,125,140,60,'b-act','Humidificador','5 V');
+ h+=`<path d="M750 160 H785 V160 H820" class="w-5v"/>`;
+ h+=`<path d="M750 135 H790" class="w-5v"/><rect x="790" y="126" width="26" height="18" rx="3" fill="var(--surface)" stroke="var(--wire-5v)" stroke-width="1.5"/><text x="803" y="139" text-anchor="middle" font-size="9" class="t-mono" style="fill:var(--wire-5v)">5V</text>`;
+ h+=net(960,165,'GND','','right');
+ // MOSFET + fan
+ h+=box(640,230,110,100,'b-pow','IRLZ44N','MOSFET');
+ h+=pin(640,280,'G')+pin(750,250,'D','end')+pin(750,310,'S','end');
+ h+=res(530,260,600,'220Ω')+`<path d="M600 260 V280 H640" class="w-sig"/>`;
+ h+=`<path d="M615 280 V300 l-6 3 l12 6 l-12 6 l12 6 l-6 3 V340" class="w-sig" style="stroke:var(--wire-gnd)"/><circle cx="615" cy="280" r="3" fill="var(--wire-sig)"/><text x="580" y="322" class="t-muted t-mono" font-size="10">10k</text>`;
+ h+=`<path d="M615 340 V350" stroke="var(--wire-gnd)" stroke-width="2.4"/><rect x="598" y="350" width="34" height="18" rx="3" fill="var(--surface)" stroke="var(--wire-gnd)" stroke-width="1.5"/><text x="615" y="363" text-anchor="middle" font-size="10" class="t-mono" style="fill:var(--wire-gnd)">GND</text>`;
+ h+=box(840,215,120,90,'b-act','Ventilador','12 V · 80 mm');
+ h+=pin(840,235,'+')+pin(840,285,'−');
+ h+=`<path d="M750 250 H800 V285 H840" class="w-sig" style="stroke:var(--wire-gnd)"/>`;
+ h+=`<path d="M840 235 H812 V208" class="w-12v"/><rect x="795" y="190" width="34" height="18" rx="3" fill="var(--surface)" stroke="var(--wire-12v)" stroke-width="1.5"/><text x="812" y="203" text-anchor="middle" font-size="10" class="t-mono" style="fill:var(--wire-12v)">12V</text>`;
+ // diode across fan
+ h+=`<path d="M780 285 V268" class="ln-ink"/><path d="M772 268 H788 L780 256 Z" fill="var(--ink)"/><path d="M772 254 H788" class="ln-ink"/><path d="M780 254 V246 H812" class="ln-ink"/><circle cx="812" cy="246" r="3" fill="var(--wire-12v)"/><circle cx="780" cy="285" r="3" fill="var(--ink)"/><text x="788" y="270" class="t-muted t-mono" font-size="9">1N4007</text>`;
+ h+=`<path d="M750 310 H770" stroke="var(--wire-gnd)" stroke-width="2.4"/><rect x="770" y="301" width="34" height="18" rx="3" fill="var(--surface)" stroke="var(--wire-gnd)" stroke-width="1.5"/><text x="787" y="314" text-anchor="middle" font-size="10" class="t-mono" style="fill:var(--wire-gnd)">GND</text>`;
+ // servo
+ h+=box(640,345,150,60,'b-act','Servo MG996R','señal · 5V · GND');
+ h+=`<path d="M530 370 H640" class="w-sig"/>`+net(790,365,'5V','','right')+net(790,390,'GND','','right');
+ // buzzer
+ h+=box(640,415,150,40,'b-act','Buzzer activo','');
+ h+=`<path d="M530 430 H640" class="w-sig"/>`+net(790,435,'GND','','right');
+ // LED
+ h+=res(530,490,610,'220Ω');
+ h+=`<path d="M610 490 H640" class="w-sig"/><path d="M640 480 V500 L660 490 Z" fill="var(--pow)"/><path d="M660 480 V500" stroke="var(--pow)" stroke-width="2.4"/><path d="M664 476 l8 -8 M670 482 l8 -8" stroke="var(--pow)" stroke-width="1.5"/><text x="650" y="520" text-anchor="middle" class="t-muted" font-size="11">LED alarma</text>`;
+ h+=net(660,490,'GND','','right');
+ g.innerHTML=h;
+})();
+
+/* ---------- código ---------- */
+const CODE=`/*
+  Incubadora automatica - ESP32 Dev Module
+  Sensor:      DHT22 (temperatura y humedad)       -> GPIO 4
+  Actuadores:  Resistencia PTC 12 V  (rele canal 1) -> GPIO 26
+               Humidificador 5 V     (rele canal 2) -> GPIO 27
+               Ventilador 12 V       (MOSFET, PWM)  -> GPIO 25
+               Servo de volteo                      -> GPIO 13
+               Buzzer activo                        -> GPIO 14
+               LED de alarma                        -> GPIO 2
+  Librerias: "DHT sensor library" (Adafruit) y "ESP32Servo"
+  Paquete de placas ESP32 de Espressif version 3.x
+*/
+#include <DHT.h>
+#include <ESP32Servo.h>
+#include <BluetoothSerial.h>
+
+#define PIN_DHT        4
+#define PIN_CALEFACTOR 26
+#define PIN_HUMIDIF    27
+#define PIN_VENT       25
+#define PIN_SERVO      13
+#define PIN_BUZZER     14
+#define PIN_LED        2
+
+// La mayoria de modulos de rele se activan con LOW
+#define RELE_ON   LOW
+#define RELE_OFF  HIGH
+
+// Consignas (setpoints) con histeresis
+const float T_ON = 37.3, T_OFF = 37.8;   // calefactor
+const float H_ON = 50.0, H_OFF = 58.0;   // humidificador
+const float T_VENT = 38.3, H_VENT = 65.0; // ventilador al 100 %
+const float T_ALTA = 39.0, T_BAJA = 35.0; // alarma
+const unsigned long VOLTEO_MS = 2UL * 60 * 60 * 1000; // 2 horas
+
+DHT dht(PIN_DHT, DHT22);
+Servo bandeja;
+BluetoothSerial SerialBT;
+
+bool calefactor = false;
+bool humidificador = false;
+int  anguloBandeja = 45;
+unsigned long ultimoVolteo = 0;
+
+void setup() {
+  Serial.begin(115200);
+  SerialBT.begin("ESP32_Incubadora");
+  dht.begin();
+
+  pinMode(PIN_CALEFACTOR, OUTPUT);
+  pinMode(PIN_HUMIDIF, OUTPUT);
+  digitalWrite(PIN_CALEFACTOR, RELE_OFF);   // arrancar en estado seguro
+  digitalWrite(PIN_HUMIDIF, RELE_OFF);
+  pinMode(PIN_BUZZER, OUTPUT);
+  pinMode(PIN_LED, OUTPUT);
+
+  ledcAttach(PIN_VENT, 20000, 8);   // PWM 20 kHz, 8 bits (0-255)
+  ledcWrite(PIN_VENT, 77);          // 30 % para recircular el aire
+
+  bandeja.attach(PIN_SERVO);
+  bandeja.write(anguloBandeja);
+}
+
+void loop() {
+  float t = dht.readTemperature();
+  float h = dht.readHumidity();
+
+  // 1. Estado seguro si el sensor falla
+  if (isnan(t) || isnan(h)) {
+    calefactor = false;
+    digitalWrite(PIN_CALEFACTOR, RELE_OFF);
+    digitalWrite(PIN_BUZZER, HIGH);
+    digitalWrite(PIN_LED, HIGH);
+    SerialBT.println("ERROR_SENSOR");
+    delay(2000);
+    return;
+  }
+
+  // 2. Calefactor: ON/OFF con histeresis
+  if (t < T_ON)  calefactor = true;
+  if (t > T_OFF) calefactor = false;
+  digitalWrite(PIN_CALEFACTOR, calefactor ? RELE_ON : RELE_OFF);
+
+  // 3. Humidificador: ON/OFF con histeresis
+  if (h < H_ON)  humidificador = true;
+  if (h > H_OFF) humidificador = false;
+  digitalWrite(PIN_HUMIDIF, humidificador ? RELE_ON : RELE_OFF);
+
+  // 4. Ventilador por PWM
+  int vent = (t > T_VENT || h > H_VENT) ? 255 : 77;
+  ledcWrite(PIN_VENT, vent);
+
+  // 5. Alarma
+  bool alarma = (t > T_ALTA || t < T_BAJA);
+  digitalWrite(PIN_BUZZER, alarma);
+  digitalWrite(PIN_LED, alarma);
+
+  // 6. Volteo de huevos cada 2 horas
+  if (millis() - ultimoVolteo >= VOLTEO_MS) {
+    anguloBandeja = (anguloBandeja == 45) ? 135 : 45;
+    bandeja.write(anguloBandeja);
+    ultimoVolteo = millis();
+  }
+
+  // 7. Enviar a la app: T,H,calefactor,humidificador,ventilador%
+  SerialBT.print(t, 1);  SerialBT.print(",");
+  SerialBT.print(h, 1);  SerialBT.print(",");
+  SerialBT.print(calefactor);    SerialBT.print(",");
+  SerialBT.print(humidificador); SerialBT.print(",");
+  SerialBT.println(vent * 100 / 255);
+
+  delay(2000);   // el DHT22 no lee mas rapido de 0.5 Hz
+}`;
+const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+document.getElementById('code').innerHTML=esc(CODE)
+  .replace(/(\/\*[\s\S]*?\*\/|\/\/[^\n]*)/g,'<span class="c">$1</span>')
+  .replace(/^(#include|#define)/gm,'<span class="k">$1</span>')
+  .replace(/\b(void|const|float|bool|int|unsigned long|if|return)\b(?![^<]*<\/span>)/g,'<span class="k">$1</span>');
+document.getElementById('copyCode').onclick=()=>{
+  const m=document.getElementById('copyMsg');
+  const sel=()=>{const r=document.createRange();r.selectNodeContents(document.getElementById('code'));const s=getSelection();s.removeAllRanges();s.addRange(r);m.textContent='Texto seleccionado: usa Ctrl+C'};
+  try{navigator.clipboard.writeText(CODE).then(()=>m.textContent='Código copiado',sel)}catch(e){sel()}
+};
+
+/* ---------- simulador ---------- */
+(function(){
+ const S={T:24,H:45,cal:false,hum:false,ven:77,ang:45,alm:false,fail:false,door:0,t:0,lastTurn:0,run:true,histT:[],histH:[]};
+ const TAMB=24, HAMB=45, el=id=>document.getElementById(id);
+ function control(){
+   const t=S.T, h=S.H;
+   if(t<37.3) S.cal=true; if(t>37.8) S.cal=false;
+   if(h<50) S.hum=true; if(h>58) S.hum=false;
+   S.ven=(t>38.3||h>65)?255:77;
+   S.alm=(t>39||t<35);
+   if(S.t-S.lastTurn>=120){S.ang=S.ang===45?135:45;S.lastTurn=S.t}
+ }
+ function physics(){
+   const heat=(S.cal&&!S.fail)?0.16:0, fanHi=S.ven===255;
+   let dT=heat-0.0055*(S.T-TAMB)-(fanHi?0.05:0.008);
+   let dH=(S.hum?0.75:0)-0.02*(S.H-HAMB)-(fanHi?0.35:0.04);
+   if(S.door>0){dT-=0.45;dH-=1.4;S.door--}
+   S.T+=dT; S.H=Math.max(20,Math.min(95,S.H+dH));
+ }
+ function msg(){
+   let m;
+   if(S.door>0) m='Puerta abierta: entra aire frío y seco. El sensor lo detecta y el controlador enciende calefactor y humidificador.';
+   else if(S.fail&&S.cal) m='Falla: el ESP32 ordena calentar pero la temperatura no sube. Solo el sensor permite descubrirlo; sin realimentación el sistema no se enteraría.';
+   else if(S.alm) m='Alarma: la temperatura está fuera del rango seguro (35 a 39 °C).';
+   else if(S.T<37.3) m='Calentando: la temperatura está por debajo de 37.3 °C.';
+   else if(S.T<=37.8) m='En banda: entre 37.3 y 37.8 °C el calefactor conserva su estado anterior (histéresis).';
+   else m='Por encima de 37.8 °C: el calefactor se apaga y el aire se enfría lentamente.';
+   el('sMsg').textContent=m;
+ }
+ function render(){
+   el('sT').textContent=S.T.toFixed(1)+' °C'; el('sH').textContent=S.H.toFixed(0)+' %';
+   const mins=S.t, hh=String(Math.floor(mins/60)).padStart(2,'0'), mm=String(mins%60).padStart(2,'0');
+   el('sClock').textContent='tiempo simulado '+hh+':'+mm+' h  (1 paso = 1 min)';
+   const set=(a,on,txt)=>{const r=document.querySelector(`.actrow[data-a="${a}"]`);r.classList.toggle('on',on);r.querySelector('.st').textContent=txt};
+   set('cal',S.cal,S.cal?(S.fail?'ON · sin efecto':'ON'):'OFF');
+   set('hum',S.hum,S.hum?'ON':'OFF');
+   set('ven',S.ven===255,S.ven===255?'100 %':'30 %');
+   set('ser',S.t-S.lastTurn<3&&S.t>3,S.ang+'°');
+   set('alm',S.alm,S.alm?'ON':'OFF');
+   msg(); draw();
+ }
+ const cv=el('chart'), ctx=cv.getContext('2d');
+ function css(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim()}
+ function draw(){
+   const dpr=window.devicePixelRatio||1, W=cv.clientWidth||640, Hh=Math.round(W*0.42);
+   if(cv.width!==Math.round(W*dpr)){cv.width=Math.round(W*dpr);cv.height=Math.round(Hh*dpr);cv.style.height=Hh+'px'}
+   ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,W,Hh);
+   const pl=38,pr=38,pt=12,pb=22,w=W-pl-pr,h=Hh-pt-pb;
+   const yT=v=>pt+h-(v-20)/(42-20)*h, yH=v=>pt+h-(v-20)/(100-20)*h;
+   ctx.fillStyle=css('--ok'); ctx.globalAlpha=.16; ctx.fillRect(pl,yT(37.8),w,yT(37.3)-yT(37.8)); ctx.globalAlpha=1;
+   ctx.strokeStyle=css('--line'); ctx.lineWidth=1; ctx.font='11px "IBM Plex Mono", monospace'; ctx.fillStyle=css('--muted');
+   [20,25,30,35,40].forEach(v=>{ctx.beginPath();ctx.moveTo(pl,yT(v));ctx.lineTo(pl+w,yT(v));ctx.stroke();ctx.textAlign='right';ctx.fillText(v+'°',pl-6,yT(v)+4)});
+   [20,40,60,80,100].forEach(v=>{ctx.textAlign='left';ctx.fillText(v+'%',pl+w+6,yH(v)+4)});
+   const N=180, n=S.histT.length, dx=w/(N-1);
+   const line=(arr,y,col)=>{ctx.strokeStyle=col;ctx.lineWidth=2.2;ctx.beginPath();arr.forEach((v,i)=>{const x=pl+(N-n+i)*dx;i?ctx.lineTo(x,y(v)):ctx.moveTo(x,y(v))});ctx.stroke();
+     if(n){ctx.fillStyle=col;ctx.beginPath();ctx.arc(pl+(N-1)*dx,y(arr[n-1]),3.5,0,7);ctx.fill()}};
+   line(S.histH,yH,css('--wire-sig')); line(S.histT,yT,css('--act'));
+   ctx.fillStyle=css('--muted'); ctx.textAlign='left'; ctx.fillText('últimas 3 h',pl,Hh-6);
+ }
+ function step(){physics();control();S.t++;S.histT.push(S.T+(Math.random()-.5)*0.06);S.histH.push(S.H);if(S.histT.length>180){S.histT.shift();S.histH.shift()}}
+ function reset(){Object.assign(S,{T:24,H:45,cal:false,hum:false,ven:77,ang:45,alm:false,door:0,t:0,lastTurn:0,histT:[],histH:[]});control()}
+ // precalentar el gráfico para que se vea el lazo desde el inicio
+ reset(); for(let i=0;i<150;i++) step(); render();
+ setInterval(()=>{if(S.run&&!document.getElementById('incubadora').hidden){step();render()}},250);
+ el('sPlay').onclick=e=>{S.run=!S.run;e.target.textContent=S.run?'Pausar':'Continuar'};
+ el('sDoor').onclick=()=>{S.door=10};
+ el('sFail').onclick=e=>{S.fail=!S.fail;e.target.setAttribute('aria-pressed',S.fail);e.target.textContent=S.fail?'Reparar calefactor':'Simular falla del calefactor'};
+ el('sReset').onclick=()=>{reset();render()};
+ addEventListener('hashchange',()=>setTimeout(draw,30)); addEventListener('resize',draw);
+ matchMedia('(prefers-color-scheme: dark)').addEventListener('change',draw);
+ new MutationObserver(draw).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+})();
+
+/* ---------- puente H ---------- */
+(function(){
+ let a=false,b=false; const el=id=>document.getElementById(id);
+ function render(){
+   const e=+el('ena').value; el('enaV').textContent=e;
+   el('in1').textContent='IN1 = '+(a?'HIGH':'LOW'); el('in1').setAttribute('aria-pressed',a);
+   el('in2').textContent='IN2 = '+(b?'HIGH':'LOW'); el('in2').setAttribute('aria-pressed',b);
+   let st, dir=0;
+   if(a&&!b){st='Adelante';dir=1} else if(!a&&b){st='Atrás';dir=-1} else if(a&&b) st='Freno activo (ambos terminales al mismo voltaje)'; else st='Libre: sin energía, gira por inercia hasta detenerse';
+   const pct=Math.round(e/255*100);
+   el('hbOut').innerHTML=dir?`<strong>${st}</strong> al ${pct} % de velocidad (ENA = ${e}).`:`<strong>${st}</strong>.`;
+   // S1 top-left, S2 top-right, S3 bottom-left, S4 bottom-right
+   const s1=a, s4=a, s2=b, s3=b; // simplificado: IN1 cierra S1 y S4; IN2 cierra S2 y S3
+   const sw=(x,y,on)=>`<line x1="${x}" y1="${y}" x2="${on?x:x+14}" y2="${y+30}" stroke="${on?'var(--act)':'var(--muted)'}" stroke-width="3"/><circle cx="${x}" cy="${y}" r="3" fill="var(--ink)"/><circle cx="${x}" cy="${y+30}" r="3" fill="var(--ink)"/>`;
+   const cur=dir===1?'M60 30 V60 L60 90 H130 M170 90 H240 V140 V170':dir===-1?'M240 30 V90 H170 M130 90 H60 V170':'';
+   el('hbSvg').innerHTML=`<text x="150" y="16" text-anchor="middle" class="t-mono" font-size="11" style="fill:var(--wire-12v)">+7.4 V</text><path d="M60 22 H240" class="w-12v"/><path d="M60 22 V30 M240 22 V30" class="w-12v"/>
+     ${sw(60,30,s1)}${sw(240,30,s2)}<path d="M60 60 V140 M240 60 V140" class="ln-ink"/>${sw(60,140,s3)}${sw(240,140,s4)}<path d="M60 170 V180 H240 V170" class="w-gnd"/><text x="150" y="196" text-anchor="middle" class="t-mono t-muted" font-size="11">GND</text>
+     <path d="M60 90 H125 M175 90 H240" class="ln-ink"/><circle cx="150" cy="90" r="24" class="b-act blk"/><text x="150" y="95" text-anchor="middle" font-weight="700" class="t-ink" font-size="14">M</text>
+     ${cur?`<path d="${cur}" fill="none" stroke="var(--act)" stroke-width="4" opacity=".35"/>`:''}
+     <text x="150" y="132" text-anchor="middle" font-size="12" style="fill:var(--act)">${dir===1?'→ corriente →':dir===-1?'← corriente ←':''}</text>
+     <text x="40" y="50" text-anchor="end" class="t-mono t-muted" font-size="10">S1</text><text x="262" y="50" class="t-mono t-muted" font-size="10">S2</text><text x="40" y="160" text-anchor="end" class="t-mono t-muted" font-size="10">S3</text><text x="262" y="160" class="t-mono t-muted" font-size="10">S4</text>`;
+ }
+ el('in1').onclick=()=>{a=!a;render()}; el('in2').onclick=()=>{b=!b;render()}; el('ena').oninput=render;
+ a=true; render();
+})();
+
+/* ---------- quiz ---------- */
+const QZ=[
+ {q:'¿Cuál es la función de un actuador dentro de un sistema?',o:['Medir una magnitud física y convertirla en señal eléctrica','Convertir una señal de mando y una fuente de energía en una acción física','Comparar la medición con la consigna','Almacenar el programa del controlador'],a:1,e:'El actuador es la salida del sistema: usa energía para cambiar el entorno según la orden del controlador.'},
+ {q:'¿Por qué no se conecta un ventilador de 12 V directamente a un GPIO del ESP32?',o:['Porque el GPIO solo entrega 3.3 V y unos 20 mA, muy por debajo de lo que pide el ventilador','Porque el ventilador es analógico','Porque el ESP32 solo controla servos','Porque el ventilador necesita Bluetooth'],a:0,e:'Se necesita una etapa de potencia (MOSFET, transistor o relé) que conmute la corriente de la fuente de 12 V.'},
+ {q:'En la incubadora, ¿qué sensor complementa al humidificador?',o:['HC-SR04','FC-51','DHT22','LDR'],a:2,e:'El DHT22 mide la humedad relativa que el humidificador modifica, y así se cierra el lazo.'},
+ {q:'¿Qué driver usarías para que un motor DC gire en ambos sentidos?',o:['Un relé simple','Un puente H como el L298N','Una resistencia de 220 Ω','Un divisor de voltaje'],a:1,e:'El puente H invierte la polaridad del motor con IN1/IN2 y regula la velocidad con PWM en ENA.'},
+ {q:'Con PWM al 25 % en una fuente de 12 V, el voltaje promedio aplicado al motor es aproximadamente:',o:['12 V','9 V','6 V','3 V'],a:3,e:'Voltaje promedio = ciclo útil × voltaje de la fuente = 0.25 × 12 V = 3 V.'},
+ {q:'¿Para qué sirve la histéresis en el control del calefactor?',o:['Para que el calefactor caliente más rápido','Para evitar que el relé conmute muchas veces cuando la temperatura está cerca del umbral','Para medir la humedad','Para ahorrar pines del ESP32'],a:1,e:'Con dos umbrales (37.3 y 37.8 °C) el actuador mantiene su estado dentro de la banda y el relé no oscila.'},
+ {q:'¿Qué hace el diodo flyback en paralelo con un motor o una bomba?',o:['Aumenta la velocidad del motor','Protege el transistor del pico de voltaje que genera la carga inductiva al apagarse','Convierte la corriente alterna en continua','Reduce el consumo del ESP32'],a:1,e:'La bobina devuelve su energía al desconectarse; el diodo le da un camino seguro y protege el driver.'},
+ {q:'Si el DHT22 deja de responder, ¿cuál es el estado seguro de la incubadora?',o:['Calefactor encendido al máximo','Calefactor apagado y alarma activa','Ventilador apagado y calefactor encendido','No hacer nada'],a:1,e:'Sin medición no se puede saber si se está sobrecalentando; apagar la fuente de calor y avisar es lo seguro.'},
+ {q:'¿Qué tipo de control usa un servomotor?',o:['ON/OFF','Pulso de posición (0.5–2.5 ms cada 20 ms)','Corriente alterna','Puente H con IN1/IN2'],a:1,e:'El ancho del pulso le indica el ángulo; el servo tiene su propio lazo cerrado interno con un potenciómetro.'},
+ {q:'¿Por qué los actuadores necesitan fuente separada y GND común con el ESP32?',o:['Para que el ESP32 consuma más','Para que los picos de corriente del actuador no reinicien al ESP32 y las señales tengan una referencia común','Porque el GND común aumenta el voltaje','No es necesario'],a:1,e:'La fuente separada aísla el ruido de potencia; el GND común permite que el driver interprete correctamente la señal de 3.3 V.'}
+];
+const quiz=document.getElementById('quiz'); let ans={};
+function renderQuiz(){
+  quiz.innerHTML=QZ.map((x,i)=>`<div class="q"><strong>${i+1}. ${x.q}</strong><ol>${x.o.map((o,j)=>`<li><button data-q="${i}" data-o="${j}">${o}</button></li>`).join('')}</ol><p class="fb" id="fb${i}"></p></div>`).join('');
+  updScore();
+}
+function updScore(){const n=Object.keys(ans).length,c=Object.entries(ans).filter(([i,o])=>QZ[i].a===o).length;document.getElementById('score').textContent=`${n} de ${QZ.length} respondidas · ${c} correctas`}
+quiz.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;const i=+b.dataset.q,o=+b.dataset.o;if(i in ans)return;ans[i]=o;
+  const btns=quiz.querySelectorAll(`button[data-q="${i}"]`);btns.forEach(x=>{const j=+x.dataset.o;if(j===QZ[i].a)x.classList.add('right');else if(j===o)x.classList.add('wrong');x.disabled=true});
+  document.getElementById('fb'+i).textContent=(o===QZ[i].a?'Correcto. ':'No es correcto. ')+QZ[i].e;updScore()});
+document.getElementById('quizReset').onclick=()=>{ans={};renderQuiz()};
+renderQuiz();
+</script>
+
+</body>
+</html>
